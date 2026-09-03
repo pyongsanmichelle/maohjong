@@ -6,6 +6,8 @@ import 'domain/meld.dart';
 import 'domain/round_progress.dart';
 import 'domain/situation_editor.dart';
 import 'domain/tile.dart';
+import 'presentation/danger_analysis_page.dart';
+import 'presentation/tile_presentation.dart';
 
 void main() => runApp(const MaohjongApp());
 
@@ -208,6 +210,15 @@ class _SituationInputPageState extends State<SituationInputPage> {
     _target = InputTarget.hand;
   });
 
+  /// 現在の入力局面を使う守備分析画面を開きます。
+  void _openDangerAnalysis() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => DangerAnalysisPage(situation: _editor.situation),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Maohjong 局面入力')),
@@ -327,6 +338,15 @@ class _SituationInputPageState extends State<SituationInputPage> {
                   onPressed: _showCallDialog,
                   icon: const Icon(Icons.call_split),
                   label: const Text('チー・ポン・カン'),
+                ),
+              if (_flow.started)
+                OutlinedButton.icon(
+                  key: const Key('dangerAnalysisButton'),
+                  onPressed: _editor.situation.hand.isEmpty
+                      ? null
+                      : _openDangerAnalysis,
+                  icon: const Icon(Icons.shield_outlined),
+                  label: const Text('守備分析'),
                 ),
               if (!_flow.started)
                 FilledButton.icon(
@@ -562,10 +582,10 @@ class _MeldArea extends StatelessWidget {
                           (tile) => Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
-                              _tileLabel(tile),
+                              tileLabel(tile),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: _tileColor(tile),
+                                color: tileColor(tile),
                               ),
                             ),
                           ),
@@ -637,7 +657,7 @@ class _CallDialogState extends State<_CallDialog> {
     final sequences = widget.flow.chiSequences(widget.discard.tile);
     final chiEnabled = sequences.isNotEmpty;
     return AlertDialog(
-      title: Text('${_tileLabel(widget.discard.tile)}を鳴く'),
+      title: Text('${tileLabel(widget.discard.tile)}を鳴く'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -686,7 +706,7 @@ class _CallDialogState extends State<_CallDialog> {
                         key: Key(
                           'chi-${sequence.map((tile) => tile.name).join('-')}',
                         ),
-                        label: Text(sequence.map(_tileLabel).join(' ')),
+                        label: Text(sequence.map(tileLabel).join(' ')),
                         selected: _sameTiles(_sequence, sequence),
                         onSelected: (_) => setState(() => _sequence = sequence),
                       ),
@@ -996,8 +1016,8 @@ class _TileButton extends StatelessWidget {
       button: true,
       enabled: isEnabled,
       label: isPaletteTile
-          ? '${_tileLabel(tile)}、残り$remainingCopies枚'
-          : _tileLabel(tile),
+          ? '${tileLabel(tile)}、残り$remainingCopies枚'
+          : tileLabel(tile),
       child: InkWell(
         key: isPaletteTile ? Key('palette-${tile.name}') : null,
         onTap: onTap,
@@ -1017,11 +1037,11 @@ class _TileButton extends StatelessWidget {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  _tileLabel(tile),
+                  tileLabel(tile),
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: fitWidth != null && fitWidth! < 30 ? 11 : null,
-                    color: isEnabled ? _tileColor(tile) : Colors.grey.shade600,
+                    color: isEnabled ? tileColor(tile) : Colors.grey.shade600,
                   ),
                 ),
               ),
@@ -1100,52 +1120,3 @@ String _roundWindLabel(RoundWind wind) => switch (wind) {
   RoundWind.east => '東',
   RoundWind.south => '南',
 };
-
-/// 牌の表示名を返します。
-String _tileLabel(Tile tile) => const [
-  '1萬',
-  '2萬',
-  '3萬',
-  '4萬',
-  '5萬',
-  '6萬',
-  '7萬',
-  '8萬',
-  '9萬',
-  '1筒',
-  '2筒',
-  '3筒',
-  '4筒',
-  '5筒',
-  '6筒',
-  '7筒',
-  '8筒',
-  '9筒',
-  '1索',
-  '2索',
-  '3索',
-  '4索',
-  '5索',
-  '6索',
-  '7索',
-  '8索',
-  '9索',
-  '東',
-  '南',
-  '西',
-  '北',
-  '白',
-  '發',
-  '中',
-][tile.index];
-
-/// 牌種別に応じた文字色を返します。
-Color _tileColor(Tile tile) => tile.index < 9
-    ? Colors.red.shade700
-    : tile.index < 18
-    ? Colors.blue.shade700
-    : tile.index < 27
-    ? Colors.green.shade700
-    : tile == Tile.red
-    ? Colors.red.shade700
-    : Colors.black87;
