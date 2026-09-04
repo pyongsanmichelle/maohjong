@@ -89,4 +89,43 @@ void main() {
     expect(flow.ownDrawRequired, isTrue);
     expect(flow.canOwnDiscard, isFalse);
   });
+
+  test('自分の副露数に応じて開始前と開始後の手牌上限を減らす', () {
+    final situation = GameSituation()
+      ..hand.addAll(List.filled(11, Tile.m1))
+      ..doraIndicators.add(Tile.p1)
+      ..melds.add(
+        Meld(
+          type: MeldType.kan,
+          ownerRiver: InputTarget.ownRiver,
+          tiles: List.filled(4, Tile.s1),
+          calledTile: Tile.s1,
+          fromRiver: null,
+          kanType: KanType.concealed,
+          origin: MeldOrigin.setup,
+        ),
+      );
+    final flow = MatchInputFlow(situation);
+
+    expect(flow.handLimit, 11);
+    expect(flow.activeHandLimit, 11);
+    expect(flow.start(), isTrue);
+    expect(flow.canOwnDiscard, isTrue);
+    expect(flow.ownDrawRequired, isFalse);
+  });
+
+  test('自分の暗槓・加槓後は嶺上牌を入力するまで打牌できない', () {
+    final situation = GameSituation()
+      ..hand.addAll(List.filled(14, Tile.m1))
+      ..doraIndicators.add(Tile.p1);
+    final flow = MatchInputFlow(situation);
+
+    expect(flow.start(), isTrue);
+    expect(flow.canOwnDiscard, isTrue);
+    expect(flow.acceptSelfKan(), isTrue);
+    expect(flow.ownDrawRequired, isTrue);
+    expect(flow.canOwnDiscard, isFalse);
+    expect(flow.cancelSelfKan(), isTrue);
+    expect(flow.canOwnDiscard, isTrue);
+  });
 }

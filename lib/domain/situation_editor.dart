@@ -2,6 +2,18 @@ import 'game_situation.dart';
 import 'meld.dart';
 import 'tile.dart';
 
+/// 自分の番に選択できる暗槓または加槓です。
+class SelfKanOption {
+  /// カン候補を生成します。
+  const SelfKanOption({required this.tile, required this.type});
+
+  /// カンする牌です。
+  final Tile tile;
+
+  /// 暗槓または加槓です。
+  final KanType type;
+}
+
 /// 局面入力の追加、削除、取り消しと枚数制約を管理します。
 class SituationEditor {
   /// 指定した局面を編集するエディタを生成します。
@@ -71,6 +83,7 @@ class SituationEditor {
       tiles: List.unmodifiable(tiles),
       calledTile: calledTile,
       fromRiver: fromRiver,
+      kanType: type == MeldType.kan ? KanType.open : null,
     );
     situation.melds.add(meld);
     clearHistory();
@@ -79,16 +92,125 @@ class SituationEditor {
 
   /// 副露を取り消し、鳴かれた牌と自分の使用牌を元へ戻します。
   bool removeMeld(Meld meld) {
+    if (meld.origin == MeldOrigin.call && meld.fromRiver == null) return false;
     if (!situation.melds.remove(meld)) return false;
-    situation.tilesFor(meld.fromRiver).add(meld.calledTile);
-    if (meld.ownerRiver == InputTarget.ownRiver) {
-      final concealedTiles = List<Tile>.from(meld.tiles)
-        ..remove(meld.calledTile);
-      situation.hand.addAll(concealedTiles);
-      _sortHand();
+    switch (meld.origin) {
+      case MeldOrigin.call:
+        situation.tilesFor(meld.fromRiver!).add(meld.calledTile);
+        if (meld.ownerRiver == InputTarget.ownRiver) {
+          final concealedTiles = List<Tile>.from(meld.tiles)
+            ..remove(meld.calledTile);
+          situation.hand.addAll(concealedTiles);
+          _sortHand();
+        }
+        break;
+      case MeldOrigin.setup:
+        break;
+      case MeldOrigin.selfKan:
+        if (meld.kanType == KanType.concealed) {
+          situation.hand.addAll(meld.tiles);
+        } else if (meld.kanType == KanType.added) {
+          situation.hand.add(meld.calledTile);
+          situation.melds.add(
+            Meld(
+              type: MeldType.pon,
+              ownerRiver: InputTarget.ownRiver,
+              tiles: List.unmodifiable(List.filled(3, meld.calledTile)),
+              calledTile: meld.calledTile,
+              fromRiver: meld.fromRiver,
+            ),
+          );
+        }
+        _sortHand();
+        break;
     }
     clearHistory();
     return true;
+  }
+
+  /// 開始時点ですでに成立しているカンを局面へ登録します。
+  Meld? registerSetupKan({
+    required InputTarget ownerRiver,
+    required Tile tile,
+    required KanType type,
+  }) {
+    if (!_isRiver(ownerRiver) || situation.count(tile) + 4 > 4) return null;
+    final meld = Meld(
+      type: MeldType.kan,
+      ownerRiver: ownerRiver,
+      tiles: List.unmodifiable(List.filled(4, tile)),
+      calledTile: tile,
+      fromRiver: null,
+      kanType: type,
+      origin: MeldOrigin.setup,
+    );
+    situation.melds.add(meld);
+    clearHistory();
+    return meld;
+  }
+
+  /// 現在の自分の手牌とポンから選べる暗槓・加槓候補を返します。
+  List<SelfKanOption> get selfKanOptions {
+    final options = <SelfKanOption>[
+      for (final tile in Tile.values)
+        if (situation.hand.where((item) => item == tile).length == 4)
+          SelfKanOption(tile: tile, type: KanType.concealed),
+      for (final meld in situation.meldsFor(InputTarget.ownRiver))
+        if (meld.type == MeldType.pon &&
+            situation.hand.contains(meld.calledTile))
+          SelfKanOption(tile: meld.calledTile, type: KanType.added),
+    ];
+    options.sort((first, second) {
+      final tile = first.tile.index.compareTo(second.tile.index);
+      return tile != 0 ? tile : first.type.index.compareTo(second.type.index);
+    });
+    return options;
+  }
+
+  /// 自分の手牌から暗槓または加槓を確定します。
+  Meld? declareSelfKan(SelfKanOption option) {
+    final available = selfKanOptions.any(
+      (item) => item.tile == option.tile && item.type == option.type,
+    );
+    if (!available) return null;
+
+    late final Meld meld;
+    if (option.type == KanType.concealed) {
+      for (var count = 0; count < 4; count++) {
+        situation.hand.remove(option.tile);
+      }
+      meld = Meld(
+        type: MeldType.kan,
+        ownerRiver: InputTarget.ownRiver,
+        tiles: List.unmodifiable(List.filled(4, option.tile)),
+        calledTile: option.tile,
+        fromRiver: null,
+        kanType: KanType.concealed,
+        origin: MeldOrigin.selfKan,
+      );
+      situation.melds.add(meld);
+    } else {
+      final pon = situation
+          .meldsFor(InputTarget.ownRiver)
+          .firstWhere(
+            (item) =>
+                item.type == MeldType.pon && item.calledTile == option.tile,
+          );
+      situation.hand.remove(option.tile);
+      situation.melds.remove(pon);
+      meld = Meld(
+        type: MeldType.kan,
+        ownerRiver: InputTarget.ownRiver,
+        tiles: List.unmodifiable(List.filled(4, option.tile)),
+        calledTile: option.tile,
+        fromRiver: pon.fromRiver,
+        kanType: KanType.added,
+        origin: MeldOrigin.selfKan,
+      );
+      situation.melds.add(meld);
+    }
+    clearHistory();
+    return meld;
   }
 
   /// 指定した位置の牌を削除します。削除できた場合は true を返します。
@@ -181,6 +303,15 @@ class SituationEditor {
       MeldType.chi => _isValidSequence(tiles),
     };
   }
+
+  /// 指定した入力先が4人いずれかの河かどうかを返します。
+  bool _isRiver(InputTarget target) => switch (target) {
+    InputTarget.ownRiver ||
+    InputTarget.lowerRiver ||
+    InputTarget.acrossRiver ||
+    InputTarget.upperRiver => true,
+    _ => false,
+  };
 
   /// 3枚が同じ数牌種の連続した順子か確認します。
   bool _isValidSequence(List<Tile> tiles) {

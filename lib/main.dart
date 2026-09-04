@@ -7,6 +7,7 @@ import 'domain/round_progress.dart';
 import 'domain/situation_editor.dart';
 import 'domain/tile.dart';
 import 'presentation/danger_analysis_page.dart';
+import 'presentation/kan_dialog.dart';
 import 'presentation/tile_presentation.dart';
 
 void main() => runApp(const MaohjongApp());
@@ -52,7 +53,8 @@ class _SituationInputPageState extends State<SituationInputPage> {
       _flow.started && _flow.currentRiver == InputTarget.ownRiver;
 
   /// 現在の入力段階で自分の手牌に保持できる最大枚数です。
-  int get _currentHandLimit => _flow.started ? 14 : _flow.handLimit;
+  int get _currentHandLimit =>
+      _flow.started ? _flow.activeHandLimit : _flow.handLimit;
 
   @override
   void initState() {
@@ -166,12 +168,87 @@ class _SituationInputPageState extends State<SituationInputPage> {
     setState(() => _flow.acceptCall(selection.type, selection.callerRiver));
   }
 
-  /// 副露を取り消して、鳴かれた打牌と通常の手番を復元します。
-  void _removeMeld(Meld meld) => setState(() {
-    if (_editor.removeMeld(meld)) {
-      _flow.restoreCallOpportunity(meld.fromRiver, meld.calledTile);
+  /// 開始時点ですでに成立しているカンを登録します。
+  Future<void> _showSetupKanDialog() async {
+    final availableTiles = Tile.values
+        .where((tile) => _editor.situation.count(tile) == 0)
+        .toList();
+    final selection = await showDialog<SetupKanSelection>(
+      context: context,
+      builder: (context) => SetupKanDialog(availableTiles: availableTiles),
+    );
+    if (!mounted || selection == null) return;
+    if (selection.ownerRiver == InputTarget.ownRiver &&
+        _editor.situation.hand.length > _flow.handLimit - 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('自分のカンを登録するには、手牌を副露後の枚数まで減らしてください。')),
+      );
+      return;
     }
-  });
+    final meld = _editor.registerSetupKan(
+      ownerRiver: selection.ownerRiver,
+      tile: selection.tile,
+      type: selection.type,
+    );
+    if (meld == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('その牌は局面内ですでに使われているため、カンを登録できません。')),
+      );
+      return;
+    }
+    setState(() {});
+  }
+
+  /// 自分の打牌可能な番に暗槓または加槓を確定します。
+  Future<void> _showSelfKanDialog() async {
+    if (!_flow.canOwnDiscard) return;
+    final options = _editor.selfKanOptions;
+    if (options.isEmpty) return;
+    final selection = await showDialog<SelfKanOption>(
+      context: context,
+      builder: (context) => SelfKanDialog(options: options),
+    );
+    if (!mounted || selection == null) return;
+    final meld = _editor.declareSelfKan(selection);
+    if (meld == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('手牌またはポンが変わったため、カンを確定できません。')),
+      );
+      return;
+    }
+    setState(_flow.acceptSelfKan);
+  }
+
+  /// 副露を取り消して、鳴かれた打牌と通常の手番を復元します。
+  void _removeMeld(Meld meld) {
+    if (_flow.started && meld.origin == MeldOrigin.setup) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('開始時点のカンは「設定に戻る」から訂正してください。')),
+      );
+      return;
+    }
+    if (meld.origin == MeldOrigin.selfKan && !_flow.ownDrawRequired) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('嶺上牌を入力した後はカンを取り消せません。')));
+      return;
+    }
+    setState(() {
+      if (!_editor.removeMeld(meld)) return;
+      switch (meld.origin) {
+        case MeldOrigin.call:
+          final fromRiver = meld.fromRiver;
+          if (fromRiver != null) {
+            _flow.restoreCallOpportunity(fromRiver, meld.calledTile);
+          }
+          break;
+        case MeldOrigin.setup:
+          break;
+        case MeldOrigin.selfKan:
+          _flow.cancelSelfKan();
+          break;
+      }
+    });
+  }
 
   /// 最後の有効な追加操作を取り消します。
   void _undo() {
@@ -338,6 +415,22 @@ class _SituationInputPageState extends State<SituationInputPage> {
                   onPressed: _showCallDialog,
                   icon: const Icon(Icons.call_split),
                   label: const Text('チー・ポン・カン'),
+                ),
+              if (!_flow.started)
+                OutlinedButton.icon(
+                  key: const Key('setupKanButton'),
+                  onPressed: _showSetupKanDialog,
+                  icon: const Icon(Icons.view_module_outlined),
+                  label: const Text('開始時点のカン'),
+                ),
+              if (_isOwnDiscardTurn &&
+                  _flow.canOwnDiscard &&
+                  _editor.selfKanOptions.isNotEmpty)
+                FilledButton.tonalIcon(
+                  key: const Key('selfKanButton'),
+                  onPressed: _showSelfKanDialog,
+                  icon: const Icon(Icons.view_module),
+                  label: const Text('カン'),
                 ),
               if (_flow.started)
                 OutlinedButton.icon(
@@ -577,7 +670,7 @@ class _MeldArea extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('${_meldTypeLabel(meld.type)} '),
+                        Text('${_meldLabel(meld)} '),
                         ...meld.tiles.map(
                           (tile) => Padding(
                             padding: const EdgeInsets.only(left: 2),
@@ -1096,6 +1189,18 @@ String _meldTypeLabel(MeldType type) => switch (type) {
   MeldType.chi => 'チー',
   MeldType.pon => 'ポン',
   MeldType.kan => 'カン',
+};
+
+/// カンの成立方法を含む副露の表示名を返します。
+String _meldLabel(Meld meld) => switch (meld.type) {
+  MeldType.chi => 'チー',
+  MeldType.pon => 'ポン',
+  MeldType.kan => switch (meld.kanType) {
+    KanType.open => '明槓',
+    KanType.concealed => '暗槓',
+    KanType.added => '加槓',
+    null => 'カン',
+  },
 };
 
 /// 二つの牌一覧が同じ順序と内容かどうかを返します。
