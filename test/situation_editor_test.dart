@@ -99,4 +99,83 @@ void main() {
     expect(situation.hand, [Tile.m1, Tile.m2, Tile.p9]);
     expect(situation.upperRiver, [Tile.m3]);
   });
+
+  test('開始時点のカンは4枚を見えている牌として登録し訂正できる', () {
+    final situation = GameSituation();
+    final editor = SituationEditor(situation);
+
+    final meld = editor.registerSetupKan(
+      ownerRiver: InputTarget.acrossRiver,
+      tile: Tile.s7,
+      type: KanType.open,
+    );
+
+    expect(meld, isNotNull);
+    expect(meld!.origin, MeldOrigin.setup);
+    expect(meld.kanType, KanType.open);
+    expect(meld.tiles, List.filled(4, Tile.s7));
+    expect(editor.remainingCopies(Tile.s7), 0);
+    expect(
+      editor.registerSetupKan(
+        ownerRiver: InputTarget.upperRiver,
+        tile: Tile.s7,
+        type: KanType.concealed,
+      ),
+      isNull,
+    );
+
+    expect(editor.removeMeld(meld), isTrue);
+    expect(situation.melds, isEmpty);
+    expect(editor.remainingCopies(Tile.s7), 4);
+  });
+
+  test('自分の番は手牌4枚から暗槓し取り消すと手牌へ戻る', () {
+    final situation = GameSituation()..hand.addAll(List.filled(4, Tile.m9));
+    final editor = SituationEditor(situation);
+
+    expect(editor.selfKanOptions, hasLength(1));
+    final option = editor.selfKanOptions.single;
+    expect(option.tile, Tile.m9);
+    expect(option.type, KanType.concealed);
+
+    final meld = editor.declareSelfKan(option);
+
+    expect(meld, isNotNull);
+    expect(situation.hand, isEmpty);
+    expect(meld!.origin, MeldOrigin.selfKan);
+    expect(meld.kanType, KanType.concealed);
+    expect(editor.removeMeld(meld), isTrue);
+    expect(situation.hand, List.filled(4, Tile.m9));
+    expect(situation.melds, isEmpty);
+  });
+
+  test('自分のポンと手牌1枚から加槓し取り消すとポンへ戻る', () {
+    final situation = GameSituation()
+      ..hand.addAll([Tile.p5, Tile.p5])
+      ..upperRiver.add(Tile.p5);
+    final editor = SituationEditor(situation);
+    final pon = editor.declareMeld(
+      type: MeldType.pon,
+      callerRiver: InputTarget.ownRiver,
+      fromRiver: InputTarget.upperRiver,
+      calledTile: Tile.p5,
+      tiles: List.filled(3, Tile.p5),
+    );
+    expect(pon, isNotNull);
+    expect(editor.add(InputTarget.hand, Tile.p5), isTrue);
+
+    final option = editor.selfKanOptions.single;
+    expect(option.type, KanType.added);
+    final kan = editor.declareSelfKan(option);
+
+    expect(kan, isNotNull);
+    expect(situation.hand, isEmpty);
+    expect(situation.melds.single.type, MeldType.kan);
+    expect(situation.melds.single.kanType, KanType.added);
+
+    expect(editor.removeMeld(kan!), isTrue);
+    expect(situation.hand, [Tile.p5]);
+    expect(situation.melds.single.type, MeldType.pon);
+    expect(situation.melds.single.fromRiver, InputTarget.upperRiver);
+  });
 }

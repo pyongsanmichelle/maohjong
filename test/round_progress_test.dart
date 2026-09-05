@@ -48,6 +48,8 @@ void main() {
     expect(flow.started, isFalse);
     expect(situation.hand, isEmpty);
     expect(situation.doraIndicators, isEmpty);
+    expect(flow.lastRoundResult?.reason, RoundEndReason.exhaustiveDraw);
+    expect(flow.lastRoundResult?.winner, isNull);
   });
 
   test('開始巡目を変更すると残りツモ回数を概算し直す', () {

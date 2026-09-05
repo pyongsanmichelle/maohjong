@@ -1,10 +1,10 @@
 import 'game_situation.dart';
 import 'meld.dart';
 import 'round_progress.dart';
+import 'round_result.dart';
 import 'tile.dart';
 
-/// 自分から見たプレイヤーの位置です。
-enum SeatPosition { self, lower, across, upper }
+export 'round_result.dart' show RoundEndReason, RoundResult, SeatPosition;
 
 /// 鳴きの対象にできる直前の打牌です。
 class DiscardEvent {
@@ -42,6 +42,9 @@ class MatchInputFlow {
   /// 鳴きの対象にできる直前の打牌です。
   DiscardEvent? lastDiscard;
 
+  /// 直近で終了した局の結果です。
+  RoundResult? lastRoundResult;
+
   /// 自分が打牌する前にツモ入力を必要としているかどうかです。
   bool _turnNeedsDraw = false;
 
@@ -49,7 +52,11 @@ class MatchInputFlow {
   final List<_FlowDiscardAction> _discardHistory = [];
 
   /// 選択中の親を考慮した自分の開始時手牌上限です。
-  int get handLimit => dealer == SeatPosition.self ? 14 : 13;
+  int get handLimit =>
+      (dealer == SeatPosition.self ? 14 : 13) - _ownMeldCount * 3;
+
+  /// 開始後に副露数を考慮して保持できる手牌上限です。
+  int get activeHandLimit => 14 - _ownMeldCount * 3;
 
   /// 現在の自分の番で、ツモ入力が必要かどうかを返します。
   bool get ownDrawRequired =>
@@ -67,7 +74,7 @@ class MatchInputFlow {
 
   /// 手牌上限を超えない場合に親を変更します。
   bool selectDealer(SeatPosition value) {
-    final limit = value == SeatPosition.self ? 14 : 13;
+    final limit = (value == SeatPosition.self ? 14 : 13) - _ownMeldCount * 3;
     if (situation.hand.length > limit) return false;
     dealer = value;
     return true;
@@ -80,8 +87,34 @@ class MatchInputFlow {
     currentRiver = _riverFor(dealer);
     lastDiscard = null;
     _turnNeedsDraw =
-        currentRiver == InputTarget.ownRiver && situation.hand.length < 14;
+        currentRiver == InputTarget.ownRiver &&
+        situation.hand.length < activeHandLimit;
     _discardHistory.clear();
+    return true;
+  }
+
+  /// ツモまたはロンで現在局を終了し、次局入力へ進めます。
+  bool completeWin({
+    required RoundEndReason reason,
+    required SeatPosition winner,
+  }) {
+    if (!started || reason == RoundEndReason.exhaustiveDraw) return false;
+    final discard = lastDiscard;
+    final loser = reason == RoundEndReason.ron && discard != null
+        ? seatForRiver(discard.river)
+        : null;
+    if (reason == RoundEndReason.ron && (loser == null || loser == winner)) {
+      return false;
+    }
+    lastRoundResult = RoundResult(
+      reason: reason,
+      roundWind: progress.roundWind,
+      kyoku: progress.kyoku,
+      winner: winner,
+      loser: loser,
+    );
+    progress.advanceRound();
+    _completeRound();
     return true;
   }
 
@@ -111,6 +144,11 @@ class MatchInputFlow {
     );
     lastDiscard = DiscardEvent(river, tile);
     if (progress.recordDiscard()) {
+      lastRoundResult = RoundResult(
+        reason: RoundEndReason.exhaustiveDraw,
+        roundWind: progressBeforeDiscard.roundWind,
+        kyoku: progressBeforeDiscard.kyoku,
+      );
       _completeRound();
       return true;
     }
@@ -142,6 +180,21 @@ class MatchInputFlow {
     currentRiver = callerRiver;
     lastDiscard = null;
     _turnNeedsDraw = type == MeldType.kan;
+    return true;
+  }
+
+  /// 自分の番の暗槓・加槓を受け付け、嶺上牌の入力待ちにします。
+  bool acceptSelfKan() {
+    if (!canOwnDiscard) return false;
+    lastDiscard = null;
+    _turnNeedsDraw = true;
+    return true;
+  }
+
+  /// 嶺上牌入力前の暗槓・加槓を取り消し、打牌可能へ戻します。
+  bool cancelSelfKan() {
+    if (!ownDrawRequired) return false;
+    _turnNeedsDraw = false;
     return true;
   }
 
@@ -210,6 +263,15 @@ class MatchInputFlow {
     InputTarget.upperRiver,
   ];
 
+  /// 河の入力先からプレイヤー位置を返します。
+  static SeatPosition? seatForRiver(InputTarget river) => switch (river) {
+    InputTarget.ownRiver => SeatPosition.self,
+    InputTarget.lowerRiver => SeatPosition.lower,
+    InputTarget.acrossRiver => SeatPosition.across,
+    InputTarget.upperRiver => SeatPosition.upper,
+    _ => null,
+  };
+
   /// 指定した位置に対応する河を返します。
   InputTarget _riverFor(SeatPosition seat) => switch (seat) {
     SeatPosition.self => InputTarget.ownRiver,
@@ -245,6 +307,9 @@ class MatchInputFlow {
     InputTarget.upperRiver => true,
     _ => false,
   };
+
+  /// 自分が公開または申告している副露・カンの数です。
+  int get _ownMeldCount => situation.meldsFor(InputTarget.ownRiver).length;
 }
 
 /// 打牌取り消しに必要な局進行とツモ要否を保持します。
