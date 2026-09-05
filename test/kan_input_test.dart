@@ -70,6 +70,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('暗槓'), findsOneWidget);
+    await _showInputAreas(tester);
     expect(find.text('対局入力中：ツモ牌を選択'), findsOneWidget);
     expect(find.text('自分の手牌 10/11枚'), findsOneWidget);
 

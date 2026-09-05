@@ -115,11 +115,11 @@ class RoundProgress {
       if (turn < 18) turn++;
     }
     if (remainingDraws > 0) return false;
-    return _advanceRound();
+    return advanceRound();
   }
 
   /// 次局へ進め、南4局終了時は半荘終了として保持します。
-  bool _advanceRound() {
+  bool advanceRound() {
     if (kyoku < 4) {
       kyoku++;
     } else if (roundWind == RoundWind.east) {

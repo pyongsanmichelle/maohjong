@@ -6,6 +6,7 @@ import '../domain/game_situation.dart';
 import '../domain/opponent.dart';
 import '../domain/tile.dart';
 import 'danger_reason_formatter.dart';
+import 'hand_danger_presentation.dart';
 import 'tile_presentation.dart';
 
 /// 自分の手牌について、相手別の危険度と理由を表示する画面です。
@@ -98,7 +99,7 @@ class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
                   .map(
                     (opponent) => ButtonSegment(
                       value: opponent,
-                      label: Text(_opponentLabel(opponent)),
+                      label: Text(dangerOpponentLabel(opponent)),
                     ),
                   )
                   .toList(),
@@ -198,7 +199,7 @@ class _AssessmentGrid extends StatelessWidget {
           button: true,
           selected: selected,
           label:
-              '${tileLabel(assessment.tile)}、${_levelLabel(assessment.level)}、${assessment.score}',
+              '${tileLabel(assessment.tile)}、${dangerLevelLabel(assessment.level)}、${assessment.score}',
           child: InkWell(
             key: Key('dangerTile-${assessment.tile.name}'),
             borderRadius: BorderRadius.circular(8),
@@ -229,7 +230,7 @@ class _AssessmentGrid extends StatelessWidget {
                   ),
                   FittedBox(
                     child: Text(
-                      _levelLabel(assessment.level),
+                      dangerLevelLabel(assessment.level),
                       style: const TextStyle(fontSize: 12),
                     ),
                   ),
@@ -267,7 +268,7 @@ class _ReasonPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '選択：${tileLabel(assessment.tile)}　${_levelLabel(assessment.level)} ${assessment.score}',
+            '選択：${tileLabel(assessment.tile)}　${dangerLevelLabel(assessment.level)} ${assessment.score}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
@@ -281,20 +282,6 @@ class _ReasonPanel extends StatelessWidget {
     ),
   );
 }
-
-/// 分析対象の表示名を返します。
-String _opponentLabel(Opponent opponent) => switch (opponent) {
-  Opponent.upper => '上家',
-  Opponent.across => '対面',
-  Opponent.lower => '下家',
-};
-
-/// 危険度区分の表示名を返します。
-String _levelLabel(DangerLevel level) => switch (level) {
-  DangerLevel.safe => '安全',
-  DangerLevel.caution => '注意',
-  DangerLevel.danger => '危険',
-};
 
 /// 危険度区分に対応する背景色を返します。
 Color _levelColor(BuildContext context, DangerLevel level) => switch (level) {

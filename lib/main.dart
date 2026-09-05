@@ -7,7 +7,9 @@ import 'domain/round_progress.dart';
 import 'domain/situation_editor.dart';
 import 'domain/tile.dart';
 import 'presentation/danger_analysis_page.dart';
+import 'presentation/hand_danger_presentation.dart';
 import 'presentation/kan_dialog.dart';
+import 'presentation/round_end_dialog.dart';
 import 'presentation/tile_presentation.dart';
 
 void main() => runApp(const MaohjongApp());
@@ -43,6 +45,7 @@ class _SituationInputPageState extends State<SituationInputPage> {
   InputTarget _target = InputTarget.hand;
   late final SituationEditor _editor;
   late final MatchInputFlow _flow;
+  final HandDangerPresenter _handDangerPresenter = const HandDangerPresenter();
 
   /// 現在画面に表示して牌を追加する入力先です。
   InputTarget get _visibleTarget =>
@@ -131,9 +134,14 @@ class _SituationInputPageState extends State<SituationInputPage> {
   void _finishRoundInput() {
     _editor.clearHistory();
     final progress = _flow.progress;
+    final result = _flow.lastRoundResult;
+    final resultMessage = result == null
+        ? '局を終了しました'
+        : _roundResultMessage(result);
     final message = progress.matchFinished
-        ? '南4局が終了しました。'
-        : '${_roundWindLabel(progress.roundWind)}${progress.kyoku}局へ進みました。手牌とドラを入力してください。';
+        ? '$resultMessage。南4局が終了しました。'
+        : '$resultMessage。${_roundWindLabel(progress.roundWind)}${progress.kyoku}局へ進みました。'
+              '手牌とドラを入力してください。';
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
@@ -296,6 +304,43 @@ class _SituationInputPageState extends State<SituationInputPage> {
     );
   }
 
+  /// 長押しした手牌について3人分の危険情報を表示します。
+  void _showHandDangerDetails(HandDangerSummary summary) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => HandDangerDetailDialog(summary: summary),
+    );
+  }
+
+  /// ツモまたはロンの内容を選び、現在局を終了します。
+  Future<void> _showRoundEndDialog() async {
+    final discard = _flow.lastDiscard;
+    final selection = await showDialog<RoundEndSelection>(
+      context: context,
+      builder: (context) => RoundEndDialog(
+        discarder: discard == null
+            ? null
+            : MatchInputFlow.seatForRiver(discard.river),
+      ),
+    );
+    if (!mounted || selection == null) return;
+    var completed = false;
+    setState(() {
+      completed = _flow.completeWin(
+        reason: selection.reason,
+        winner: selection.winner,
+      );
+      if (completed) _editor.clearHistory();
+    });
+    if (completed) {
+      _finishRoundInput();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('直前の打牌がないため、ロンでは局を終了できません。')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Maohjong 局面入力')),
@@ -306,10 +351,19 @@ class _SituationInputPageState extends State<SituationInputPage> {
       isOwnDiscardTurn: _isOwnDiscardTurn,
       ownDrawRequired: _flow.ownDrawRequired,
       melds: _editor.situation.meldsFor(InputTarget.ownRiver).toList(),
+      dangerSummaries: _flow.started
+          ? {
+              for (final summary in _handDangerPresenter.summarize(
+                _editor.situation,
+              ))
+                summary.tile: summary,
+            }
+          : const {},
       onTileTap: _flow.started
           ? (_isOwnDiscardTurn ? _discardFromHand : null)
           : (index) => _remove(InputTarget.hand, index),
       onMeldTap: _removeMeld,
+      onDangerLongPress: _flow.started ? _showHandDangerDetails : null,
     ),
     body: SafeArea(
       child: ListView(
@@ -433,6 +487,13 @@ class _SituationInputPageState extends State<SituationInputPage> {
                   label: const Text('カン'),
                 ),
               if (_flow.started)
+                FilledButton.tonalIcon(
+                  key: const Key('roundEndButton'),
+                  onPressed: _showRoundEndDialog,
+                  icon: const Icon(Icons.sports_score),
+                  label: const Text('局終了'),
+                ),
+              if (_flow.started)
                 OutlinedButton.icon(
                   key: const Key('dangerAnalysisButton'),
                   onPressed: _editor.situation.hand.isEmpty
@@ -500,8 +561,10 @@ class _PersistentHand extends StatelessWidget {
     required this.isOwnDiscardTurn,
     required this.ownDrawRequired,
     required this.melds,
+    required this.dangerSummaries,
     required this.onTileTap,
     required this.onMeldTap,
+    required this.onDangerLongPress,
   });
 
   /// 現在の自分の手牌です。
@@ -522,11 +585,17 @@ class _PersistentHand extends StatelessWidget {
   /// 自分が公開している副露です。
   final List<Meld> melds;
 
+  /// 牌種ごとの最大危険率と相手別評価です。開始前は空です。
+  final Map<Tile, HandDangerSummary> dangerSummaries;
+
   /// 手牌タップ時の処理です。相手の番は null です。
   final ValueChanged<int>? onTileTap;
 
   /// 副露をタップして訂正するときの処理です。
   final ValueChanged<Meld> onMeldTap;
+
+  /// 手牌長押し時に危険情報を表示する処理です。開始前は null です。
+  final ValueChanged<HandDangerSummary>? onDangerLongPress;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -587,9 +656,20 @@ class _PersistentHand extends StatelessWidget {
                                 tile: tiles[index],
                                 fitWidth: tileWidth,
                                 fitHeight: 48,
+                                dangerScore: dangerSummaries[tiles[index]]
+                                    ?.maximumAssessment
+                                    .score,
+                                dangerScoreKey: Key('handDangerScore-$index'),
                                 onTap: onTileTap == null
                                     ? null
                                     : () => onTileTap!(index),
+                                onLongPress:
+                                    onDangerLongPress == null ||
+                                        dangerSummaries[tiles[index]] == null
+                                    ? null
+                                    : () => onDangerLongPress!(
+                                        dangerSummaries[tiles[index]]!,
+                                      ),
                               ),
                             ),
                           ),
@@ -1078,6 +1158,9 @@ class _TileButton extends StatelessWidget {
     super.key,
     required this.tile,
     required this.onTap,
+    this.onLongPress,
+    this.dangerScore,
+    this.dangerScoreKey,
     this.remainingCopies,
     this.paletteWidth,
     this.fitWidth,
@@ -1088,6 +1171,15 @@ class _TileButton extends StatelessWidget {
 
   /// タップ時の処理です。残数0のパレット牌では null になります。
   final VoidCallback? onTap;
+
+  /// 長押し時の処理です。開始後の固定手牌だけで使用します。
+  final VoidCallback? onLongPress;
+
+  /// 3人の相手について最大となる危険スコアです。
+  final int? dangerScore;
+
+  /// 固定手牌上の危険率表示を識別するキーです。
+  final Key? dangerScoreKey;
 
   /// パレットで表示する未確認枚数です。入力済み牌では null です。
   final int? remainingCopies;
@@ -1104,16 +1196,19 @@ class _TileButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPaletteTile = remainingCopies != null;
-    final isEnabled = onTap != null;
+    final isEnabled = onTap != null || onLongPress != null;
     return Semantics(
       button: true,
       enabled: isEnabled,
       label: isPaletteTile
           ? '${tileLabel(tile)}、残り$remainingCopies枚'
-          : tileLabel(tile),
+          : dangerScore == null
+          ? tileLabel(tile)
+          : '${tileLabel(tile)}、危険率$dangerScoreパーセント',
       child: InkWell(
         key: isPaletteTile ? Key('palette-${tile.name}') : null,
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(5),
         child: Container(
           width: fitWidth ?? (isPaletteTile ? paletteWidth : 38),
@@ -1142,6 +1237,13 @@ class _TileButton extends StatelessWidget {
                 Text(
                   '残$remainingCopies',
                   style: Theme.of(context).textTheme.labelSmall,
+                ),
+              if (dangerScore != null)
+                Text(
+                  '$dangerScore%',
+                  key: dangerScoreKey,
+                  style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
             ],
           ),
@@ -1201,6 +1303,15 @@ String _meldLabel(Meld meld) => switch (meld.type) {
     KanType.added => '加槓',
     null => 'カン',
   },
+};
+
+/// 直近局の終了理由、和了者、放銃者を通知用の文へ変換します。
+String _roundResultMessage(RoundResult result) => switch (result.reason) {
+  RoundEndReason.tsumo => 'ツモ：${roundSeatLabel(result.winner!)}が和了',
+  RoundEndReason.ron =>
+    'ロン：${roundSeatLabel(result.winner!)}が和了'
+        '（放銃：${roundSeatLabel(result.loser!)}）',
+  RoundEndReason.exhaustiveDraw => '流局',
 };
 
 /// 二つの牌一覧が同じ順序と内容かどうかを返します。

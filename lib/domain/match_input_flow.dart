@@ -1,10 +1,10 @@
 import 'game_situation.dart';
 import 'meld.dart';
 import 'round_progress.dart';
+import 'round_result.dart';
 import 'tile.dart';
 
-/// 自分から見たプレイヤーの位置です。
-enum SeatPosition { self, lower, across, upper }
+export 'round_result.dart' show RoundEndReason, RoundResult, SeatPosition;
 
 /// 鳴きの対象にできる直前の打牌です。
 class DiscardEvent {
@@ -41,6 +41,9 @@ class MatchInputFlow {
 
   /// 鳴きの対象にできる直前の打牌です。
   DiscardEvent? lastDiscard;
+
+  /// 直近で終了した局の結果です。
+  RoundResult? lastRoundResult;
 
   /// 自分が打牌する前にツモ入力を必要としているかどうかです。
   bool _turnNeedsDraw = false;
@@ -90,6 +93,31 @@ class MatchInputFlow {
     return true;
   }
 
+  /// ツモまたはロンで現在局を終了し、次局入力へ進めます。
+  bool completeWin({
+    required RoundEndReason reason,
+    required SeatPosition winner,
+  }) {
+    if (!started || reason == RoundEndReason.exhaustiveDraw) return false;
+    final discard = lastDiscard;
+    final loser = reason == RoundEndReason.ron && discard != null
+        ? seatForRiver(discard.river)
+        : null;
+    if (reason == RoundEndReason.ron && (loser == null || loser == winner)) {
+      return false;
+    }
+    lastRoundResult = RoundResult(
+      reason: reason,
+      roundWind: progress.roundWind,
+      kyoku: progress.kyoku,
+      winner: winner,
+      loser: loser,
+    );
+    progress.advanceRound();
+    _completeRound();
+    return true;
+  }
+
   /// 設定の修正に戻ります。入力済みの牌は保持します。
   void returnToSetup() {
     started = false;
@@ -116,6 +144,11 @@ class MatchInputFlow {
     );
     lastDiscard = DiscardEvent(river, tile);
     if (progress.recordDiscard()) {
+      lastRoundResult = RoundResult(
+        reason: RoundEndReason.exhaustiveDraw,
+        roundWind: progressBeforeDiscard.roundWind,
+        kyoku: progressBeforeDiscard.kyoku,
+      );
       _completeRound();
       return true;
     }
@@ -229,6 +262,15 @@ class MatchInputFlow {
     InputTarget.acrossRiver,
     InputTarget.upperRiver,
   ];
+
+  /// 河の入力先からプレイヤー位置を返します。
+  static SeatPosition? seatForRiver(InputTarget river) => switch (river) {
+    InputTarget.ownRiver => SeatPosition.self,
+    InputTarget.lowerRiver => SeatPosition.lower,
+    InputTarget.acrossRiver => SeatPosition.across,
+    InputTarget.upperRiver => SeatPosition.upper,
+    _ => null,
+  };
 
   /// 指定した位置に対応する河を返します。
   InputTarget _riverFor(SeatPosition seat) => switch (seat) {
