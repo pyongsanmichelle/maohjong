@@ -12,6 +12,7 @@ import 'presentation/discard_metadata_editor.dart';
 import 'presentation/hand_danger_presentation.dart';
 import 'presentation/kan_dialog.dart';
 import 'presentation/round_end_dialog.dart';
+import 'presentation/started_table_layout.dart';
 import 'presentation/tile_presentation.dart';
 
 void main() => runApp(const MaohjongApp());
@@ -389,6 +390,265 @@ class _SituationInputPageState extends State<SituationInputPage> {
     }
   }
 
+  /// 開始前の設定、タブ入力、牌パレットを従来どおり表示します。
+  Widget _buildSetupBody() => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      _RoundInput(
+        roundWind: _flow.progress.roundWind,
+        kyoku: _flow.progress.kyoku,
+        turn: _flow.progress.turn,
+        remainingDraws: _flow.progress.remainingDraws,
+        enabled: true,
+        onRoundWindChanged: (value) =>
+            setState(() => _flow.progress.selectRoundWind(value)),
+        onKyokuChanged: (value) =>
+            setState(() => _flow.progress.selectKyoku(value)),
+        onTurnChanged: (value) =>
+            setState(() => _flow.progress.selectTurn(value)),
+      ),
+      const SizedBox(height: 12),
+      _DealerSelector(
+        dealer: _flow.dealer,
+        enabled: true,
+        onChanged: _selectDealer,
+      ),
+      const SizedBox(height: 8),
+      DefaultTabController(
+        key: ValueKey(_target),
+        length: InputTarget.values.length,
+        initialIndex: _target.index,
+        child: TabBar(
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          onTap: (index) => setState(() => _target = InputTarget.values[index]),
+          tabs: InputTarget.values
+              .map(
+                (target) => Tab(
+                  key: Key('targetTab-${target.name}'),
+                  text: _targetTabLabel(target),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (_visibleTarget == InputTarget.hand)
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(10),
+            child: Text('自分の手牌は画面下部に常時表示しています。'),
+          ),
+        )
+      else
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _TileArea(
+              key: Key('targetArea-${_visibleTarget.name}'),
+              label: _targetLabel(_visibleTarget),
+              tiles: _editor.situation.tilesFor(_visibleTarget),
+              selected: true,
+              onRemove: (index) => _remove(_visibleTarget, index),
+            ),
+            if (_isRiverTarget(_visibleTarget) &&
+                _visibleTarget != InputTarget.ownRiver)
+              _MeldArea(
+                river: _visibleTarget,
+                melds: _editor.situation.meldsFor(_visibleTarget).toList(),
+                onRemove: _removeMeld,
+              ),
+          ],
+        ),
+      _buildActionControls(),
+      if (_flow.progress.matchFinished)
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text('半荘終了です。新しく始める場合は場・局・巡目を選び直してください。'),
+        )
+      else if (!_flow.canStart)
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text('開始するには、ドラ表示牌と自分の手牌を入力してください。'),
+        ),
+      const SizedBox(height: 20),
+      const Text(
+        '牌を選ぶ',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 8),
+      _TilePalette(onTap: _add, remainingCopies: _editor.remainingCopies),
+    ],
+  );
+
+  /// 開始後の卓を固定し、牌パレットだけを内部スクロール可能にします。
+  Widget _buildStartedBody() => LayoutBuilder(
+    builder: (context, constraints) {
+      final tableHeight = (constraints.maxHeight * 0.46)
+          .clamp(270.0, 320.0)
+          .toDouble();
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        child: Column(
+          children: [
+            SizedBox(
+              height: tableHeight,
+              child: StartedTableLayout(
+                situation: _editor.situation,
+                progress: _flow.progress,
+                dealer: _flow.dealer,
+                activeRiver: _isOwnDiscardTurn && _flow.ownDrawRequired
+                    ? null
+                    : _flow.currentRiver,
+                onRemoveTile: _remove,
+                onRemoveMeld: _removeMeld,
+              ),
+            ),
+            const SizedBox(height: 4),
+            _buildMatchInputStatus(),
+            const SizedBox(height: 4),
+            _buildActionControls(),
+            const SizedBox(height: 4),
+            Expanded(
+              child: Container(
+                key: const Key('tilePalettePanel'),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  key: const Key('startedPaletteScroll'),
+                  primary: false,
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '牌を選ぶ',
+                        style: Theme.of(context).textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      _TilePalette(
+                        onTap: _add,
+                        onLongPress:
+                            _isRiverTarget(_visibleTarget) &&
+                                _visibleTarget != InputTarget.ownRiver
+                            ? _addDiscardWithMetadata
+                            : null,
+                        remainingCopies: _editor.remainingCopies,
+                        compact: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  /// 現在求めているツモまたは打牌を小さな帯で表示します。
+  Widget _buildMatchInputStatus() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      _isOwnDiscardTurn
+          ? _flow.ownDrawRequired
+                ? '対局入力中：ツモ牌を選択'
+                : '対局入力中：手牌から自分の打牌を選択'
+          : '対局入力中：${_targetLabel(_flow.currentRiver)}を選択',
+      key: const Key('matchInputStatus'),
+      style: Theme.of(context).textTheme.labelMedium
+          ?.copyWith(fontWeight: FontWeight.bold),
+    ),
+  );
+
+  /// 入力段階に応じた操作ボタンと次の操作案内を表示します。
+  Widget _buildActionControls() => Wrap(
+    key: _flow.started ? const Key('matchActionBar') : null,
+    spacing: 8,
+    runSpacing: 6,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      OutlinedButton.icon(
+        onPressed: _editor.canUndo ? _undo : null,
+        icon: const Icon(Icons.undo),
+        label: const Text('取り消し'),
+      ),
+      if (_flow.started && _flow.lastDiscard != null)
+        FilledButton.tonalIcon(
+          key: const Key('callButton'),
+          onPressed: _showCallDialog,
+          icon: const Icon(Icons.call_split),
+          label: const Text('チー・ポン・カン'),
+        ),
+      if (!_flow.started)
+        OutlinedButton.icon(
+          key: const Key('setupKanButton'),
+          onPressed: _showSetupKanDialog,
+          icon: const Icon(Icons.view_module_outlined),
+          label: const Text('開始時点のカン'),
+        ),
+      if (_isOwnDiscardTurn &&
+          _flow.canOwnDiscard &&
+          _editor.selfKanOptions.isNotEmpty)
+        FilledButton.tonalIcon(
+          key: const Key('selfKanButton'),
+          onPressed: _showSelfKanDialog,
+          icon: const Icon(Icons.view_module),
+          label: const Text('カン'),
+        ),
+      if (_flow.started)
+        FilledButton.tonalIcon(
+          key: const Key('roundEndButton'),
+          onPressed: _showRoundEndDialog,
+          icon: const Icon(Icons.sports_score),
+          label: const Text('局終了'),
+        ),
+      if (_flow.started)
+        OutlinedButton.icon(
+          key: const Key('dangerAnalysisButton'),
+          onPressed: _openDangerAnalysis,
+          icon: const Icon(Icons.shield_outlined),
+          label: const Text('相手分析'),
+        ),
+      if (!_flow.started)
+        FilledButton.icon(
+          key: const Key('startButton'),
+          onPressed: _flow.canStart ? _start : null,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('開始'),
+        )
+      else
+        OutlinedButton.icon(
+          key: const Key('returnToSetupButton'),
+          onPressed: _returnToSetup,
+          icon: const Icon(Icons.settings),
+          label: const Text('設定に戻る'),
+        ),
+      Text(
+        _flow.started
+            ? _isOwnDiscardTurn
+                  ? _flow.ownDrawRequired
+                        ? '下の牌パレットからツモ牌を1枚選択'
+                        : 'ツモ済み：手牌をタップして打牌'
+                  : '次: ${_targetLabel(_flow.currentRiver)}'
+            : '手牌 ${_editor.situation.hand.length}/${_flow.handLimit}枚',
+        key: const Key('inputGuide'),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Maohjong 局面入力')),
@@ -398,7 +658,9 @@ class _SituationInputPageState extends State<SituationInputPage> {
       started: _flow.started,
       isOwnDiscardTurn: _isOwnDiscardTurn,
       ownDrawRequired: _flow.ownDrawRequired,
-      melds: _editor.situation.meldsFor(InputTarget.ownRiver).toList(),
+      melds: _flow.started
+          ? const []
+          : _editor.situation.meldsFor(InputTarget.ownRiver).toList(),
       dangerSummaries: _flow.started
           ? {
               for (final summary in _handDangerPresenter.summarize(
@@ -414,194 +676,7 @@ class _SituationInputPageState extends State<SituationInputPage> {
       onDangerLongPress: _flow.started ? _showHandDangerDetails : null,
     ),
     body: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _RoundInput(
-            roundWind: _flow.progress.roundWind,
-            kyoku: _flow.progress.kyoku,
-            turn: _flow.progress.turn,
-            remainingDraws: _flow.progress.remainingDraws,
-            enabled: !_flow.started,
-            onRoundWindChanged: (value) =>
-                setState(() => _flow.progress.selectRoundWind(value)),
-            onKyokuChanged: (value) =>
-                setState(() => _flow.progress.selectKyoku(value)),
-            onTurnChanged: (value) =>
-                setState(() => _flow.progress.selectTurn(value)),
-          ),
-          const SizedBox(height: 12),
-          _DealerSelector(
-            dealer: _flow.dealer,
-            enabled: !_flow.started,
-            onChanged: _selectDealer,
-          ),
-          const SizedBox(height: 8),
-          if (!_flow.started)
-            DefaultTabController(
-              key: ValueKey(_target),
-              length: InputTarget.values.length,
-              initialIndex: _target.index,
-              child: TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                onTap: (index) =>
-                    setState(() => _target = InputTarget.values[index]),
-                tabs: InputTarget.values
-                    .map(
-                      (target) => Tab(
-                        key: Key('targetTab-${target.name}'),
-                        text: _targetTabLabel(target),
-                      ),
-                    )
-                    .toList(),
-              ),
-            )
-          else
-            Card(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Text(
-                  _isOwnDiscardTurn
-                      ? _flow.ownDrawRequired
-                            ? '対局入力中：ツモ牌を選択'
-                            : '対局入力中：手牌から自分の打牌を選択'
-                      : '対局入力中：${_targetLabel(_flow.currentRiver)}を選択',
-                  key: const Key('matchInputStatus'),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          if (_visibleTarget == InputTarget.hand)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(10),
-                child: Text('自分の手牌は画面下部に常時表示しています。'),
-              ),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _TileArea(
-                  key: Key('targetArea-${_visibleTarget.name}'),
-                  label: _targetLabel(_visibleTarget),
-                  tiles: _editor.situation.tilesFor(_visibleTarget),
-                  selected: true,
-                  onRemove: (index) => _remove(_visibleTarget, index),
-                ),
-                if (_isRiverTarget(_visibleTarget) &&
-                    _visibleTarget != InputTarget.ownRiver)
-                  _MeldArea(
-                    river: _visibleTarget,
-                    melds: _editor.situation.meldsFor(_visibleTarget).toList(),
-                    onRemove: _removeMeld,
-                  ),
-              ],
-            ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _editor.canUndo ? _undo : null,
-                icon: const Icon(Icons.undo),
-                label: const Text('取り消し'),
-              ),
-              if (_flow.started && _flow.lastDiscard != null)
-                FilledButton.tonalIcon(
-                  key: const Key('callButton'),
-                  onPressed: _showCallDialog,
-                  icon: const Icon(Icons.call_split),
-                  label: const Text('チー・ポン・カン'),
-                ),
-              if (!_flow.started)
-                OutlinedButton.icon(
-                  key: const Key('setupKanButton'),
-                  onPressed: _showSetupKanDialog,
-                  icon: const Icon(Icons.view_module_outlined),
-                  label: const Text('開始時点のカン'),
-                ),
-              if (_isOwnDiscardTurn &&
-                  _flow.canOwnDiscard &&
-                  _editor.selfKanOptions.isNotEmpty)
-                FilledButton.tonalIcon(
-                  key: const Key('selfKanButton'),
-                  onPressed: _showSelfKanDialog,
-                  icon: const Icon(Icons.view_module),
-                  label: const Text('カン'),
-                ),
-              if (_flow.started)
-                FilledButton.tonalIcon(
-                  key: const Key('roundEndButton'),
-                  onPressed: _showRoundEndDialog,
-                  icon: const Icon(Icons.sports_score),
-                  label: const Text('局終了'),
-                ),
-              if (_flow.started)
-                OutlinedButton.icon(
-                  key: const Key('dangerAnalysisButton'),
-                  onPressed: _openDangerAnalysis,
-                  icon: const Icon(Icons.shield_outlined),
-                  label: const Text('相手分析'),
-                ),
-              if (!_flow.started)
-                FilledButton.icon(
-                  key: const Key('startButton'),
-                  onPressed: _flow.canStart ? _start : null,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('開始'),
-                )
-              else
-                OutlinedButton.icon(
-                  key: const Key('returnToSetupButton'),
-                  onPressed: _returnToSetup,
-                  icon: const Icon(Icons.settings),
-                  label: const Text('設定に戻る'),
-                ),
-              Text(
-                _flow.started
-                    ? _isOwnDiscardTurn
-                          ? _flow.ownDrawRequired
-                                ? '下の牌パレットからツモ牌を1枚選択'
-                                : 'ツモ済み：手牌をタップして打牌'
-                          : '次: ${_targetLabel(_flow.currentRiver)}'
-                    : '手牌 ${_editor.situation.hand.length}/${_flow.handLimit}枚',
-                key: const Key('inputGuide'),
-              ),
-            ],
-          ),
-          if (!_flow.started && _flow.progress.matchFinished)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text('半荘終了です。新しく始める場合は場・局・巡目を選び直してください。'),
-            )
-          else if (!_flow.started && !_flow.canStart)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text('開始するには、ドラ表示牌と自分の手牌を入力してください。'),
-            ),
-          const SizedBox(height: 20),
-          const Text(
-            '牌を選ぶ',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          _TilePalette(
-            onTap: _add,
-            onLongPress:
-                _flow.started &&
-                    _isRiverTarget(_visibleTarget) &&
-                    _visibleTarget != InputTarget.ownRiver
-                ? _addDiscardWithMetadata
-                : null,
-            remainingCopies: _editor.remainingCopies,
-          ),
-        ],
-      ),
+      child: _flow.started ? _buildStartedBody() : _buildSetupBody(),
     ),
   );
 }
@@ -1164,6 +1239,7 @@ class _TilePalette extends StatelessWidget {
     required this.onTap,
     required this.remainingCopies,
     this.onLongPress,
+    this.compact = false,
   });
 
   final ValueChanged<Tile> onTap;
@@ -1173,6 +1249,9 @@ class _TilePalette extends StatelessWidget {
 
   /// 見えている牌を差し引いた、各牌の未確認枚数を返します。
   final int Function(Tile) remainingCopies;
+
+  /// 対局開始後の限られた高さへ収める表示かどうかです。
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -1192,7 +1271,7 @@ class _TilePalette extends StatelessWidget {
 
   /// 同じ種類の牌を一行に並べます。
   Widget _row(List<Tile> tiles, double tileWidth, double spacing) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
+    padding: EdgeInsets.only(bottom: compact ? 3 : 6),
     child: Row(
       children: List.generate(tiles.length, (index) {
         final tile = tiles[index];
@@ -1204,6 +1283,7 @@ class _TilePalette extends StatelessWidget {
           child: _TileButton(
             tile: tile,
             paletteWidth: tileWidth,
+            fitHeight: compact ? 38 : null,
             remainingCopies: remaining,
             onTap: remaining == 0 ? null : () => onTap(tile),
             onLongPress: remaining == 0 || onLongPress == null
@@ -1304,11 +1384,15 @@ class _TileButton extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
               if (dangerScore != null)
-                Text(
-                  '$dangerScore%',
-                  key: dangerScoreKey,
-                  style: Theme.of(context).textTheme.labelSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '$dangerScore%',
+                    key: dangerScoreKey,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
                 ),
             ],
           ),

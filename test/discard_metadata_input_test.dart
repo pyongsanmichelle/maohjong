@@ -22,13 +22,13 @@ void main() {
     await tester.ensureVisible(startButton);
     await tester.tap(startButton);
     await tester.pump();
-    await _showTilePalette(tester);
+    await _showStartedTile(tester, 'p1');
     await tester.tap(find.byKey(const Key('palette-p1')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('handTile-0')));
     await tester.pump();
 
-    await _showTilePalette(tester);
+    await _showStartedTile(tester, 'm2');
     await tester.longPress(find.byKey(const Key('palette-m2')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('discardSourceSelector')), findsOneWidget);
@@ -76,8 +76,24 @@ Future<void> _showInputAreas(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// 対局開始後の内部スクロールで指定牌を操作可能な位置へ表示します。
+Future<void> _showStartedTile(WidgetTester tester, String tileName) async {
+  await tester.scrollUntilVisible(
+    find.byKey(Key('palette-$tileName')),
+    80,
+    scrollable: _startedPaletteScrollable(),
+  );
+  await tester.pumpAndSettle();
+}
+
 /// 局面入力画面本体の縦スクロール要素を返します。
 Finder _verticalScrollable() => find.byWidgetPredicate(
   (widget) =>
       widget is Scrollable && widget.axisDirection == AxisDirection.down,
+);
+
+/// 対局開始後の牌パレット専用スクロール要素を返します。
+Finder _startedPaletteScrollable() => find.descendant(
+  of: find.byKey(const Key('tilePalettePanel')),
+  matching: find.byType(Scrollable),
 );
