@@ -200,3 +200,4 @@ infrastructure
 ## 9. 関連設計書
 
 - [守備分析 基本設計書](danger_analysis_design.md)
+- [対局開始後レイアウト 基本設計書](table_layout_design.md)
