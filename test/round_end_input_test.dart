@@ -46,6 +46,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await _showTilePalette(tester);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('palette-s3')),
+      50,
+      scrollable: _startedPaletteScrollable(),
+    );
     await tester.tap(find.byKey(const Key('palette-s3')));
     await tester.pump();
     await _openRoundEndDialog(tester);
@@ -118,16 +123,28 @@ Future<void> _openRoundEndDialog(WidgetTester tester) async {
 
 /// 牌パレットまでスクロールします。
 Future<void> _showTilePalette(WidgetTester tester) async {
-  await tester.scrollUntilVisible(
-    find.byKey(const Key('palette-red')),
-    300,
-    scrollable: _verticalScrollable(),
-  );
+  if (find.byKey(const Key('startedTableLayout')).evaluate().isNotEmpty) {
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('palette-m1')),
+      80,
+      scrollable: _startedPaletteScrollable(),
+    );
+  } else {
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('palette-red')),
+      300,
+      scrollable: _verticalScrollable(),
+    );
+  }
   await tester.pumpAndSettle();
 }
 
 /// 画面上部の入力領域までスクロールします。
 Future<void> _showInputAreas(WidgetTester tester) async {
+  if (find.byKey(const Key('startedTableLayout')).evaluate().isNotEmpty) {
+    await tester.pumpAndSettle();
+    return;
+  }
   await tester.scrollUntilVisible(
     find.textContaining('局・'),
     -300,
@@ -140,4 +157,10 @@ Future<void> _showInputAreas(WidgetTester tester) async {
 Finder _verticalScrollable() => find.byWidgetPredicate(
   (widget) =>
       widget is Scrollable && widget.axisDirection == AxisDirection.down,
+);
+
+/// 対局開始後の牌パレット専用スクロール要素を返します。
+Finder _startedPaletteScrollable() => find.descendant(
+  of: find.byKey(const Key('tilePalettePanel')),
+  matching: find.byType(Scrollable),
 );
