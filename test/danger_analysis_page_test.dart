@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maohjong/domain/game_situation.dart';
+import 'package:maohjong/domain/meld.dart';
+import 'package:maohjong/domain/round_action_history.dart';
+import 'package:maohjong/domain/round_progress.dart';
+import 'package:maohjong/domain/round_result.dart';
 import 'package:maohjong/domain/tile.dart';
 import 'package:maohjong/main.dart';
 import 'package:maohjong/presentation/danger_analysis_page.dart';
@@ -82,6 +86,73 @@ void main() {
 
     expect(find.byKey(const Key('dangerEmptyHand')), findsOneWidget);
     expect(find.text('手牌を入力してください。'), findsOneWidget);
+
+    await tester.tap(find.text('狙い役・待ち'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('intentNotice')), findsOneWidget);
+  });
+
+  testWidgets('狙い役・待ちへ切り替えて候補の根拠を確認できる', (tester) async {
+    final situation = _intentSituation();
+    final history = _intentHistory(situation);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DangerAnalysisPage(
+          situation: situation,
+          roundWind: RoundWind.east,
+          dealer: SeatPosition.self,
+          turn: 8,
+          actionHistory: history,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('狙い役・待ち'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('intentNotice')), findsOneWidget);
+    expect(find.byKey(const Key('yaku-yakuhai')), findsOneWidget);
+    expect(find.text('95/100'), findsOneWidget);
+    expect(find.text('公開情報から成立確認'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('yaku-yakuhai')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('intentEvidenceSheet')), findsOneWidget);
+    expect(find.textContaining('北の刻子・槓子'), findsOneWidget);
+  });
+
+  testWidgets('打牌履歴から手出しとリーチ属性を訂正できる', (tester) async {
+    final situation = _intentSituation();
+    final history = _intentHistory(situation);
+    final first = history.actions.whereType<DiscardAction>().first;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DangerAnalysisPage(situation: situation, actionHistory: history),
+      ),
+    );
+
+    await tester.tap(find.text('狙い役・待ち'));
+    await tester.pumpAndSettle();
+    final historyTile = find.byKey(Key('discardHistory-${first.id}'));
+    final editButton = find.descendant(
+      of: historyTile,
+      matching: find.byIcon(Icons.edit_outlined),
+    );
+    await tester.scrollUntilVisible(
+      editButton,
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('手出し'));
+    await tester.tap(find.byKey(const Key('riichiDiscardSwitch')));
+    await tester.tap(find.byKey(const Key('saveDiscardMetadataButton')));
+    await tester.pumpAndSettle();
+
+    expect(history.discardById(first.id)!.source, DiscardSource.fromHand);
+    expect(history.discardById(first.id)!.declaresRiichi, isTrue);
   });
 
   testWidgets('対局開始後に局面入力画面から守備分析を開ける', (tester) async {
@@ -108,9 +179,49 @@ void main() {
     await tester.tap(analysisButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('守備分析'), findsOneWidget);
+    expect(find.text('相手分析'), findsOneWidget);
     expect(find.byKey(const Key('dangerTile-m1')), findsOneWidget);
   });
+}
+
+/// 役牌と十分な河を含む相手分析用局面を生成します。
+GameSituation _intentSituation() {
+  final situation = GameSituation()
+    ..hand.add(Tile.m9)
+    ..upperRiver.addAll([
+      Tile.m1,
+      Tile.m2,
+      Tile.m3,
+      Tile.p1,
+      Tile.p2,
+      Tile.p3,
+      Tile.s1,
+      Tile.s2,
+    ])
+    ..melds.add(
+      Meld(
+        type: MeldType.pon,
+        ownerRiver: InputTarget.upperRiver,
+        tiles: const [Tile.north, Tile.north, Tile.north],
+        calledTile: Tile.north,
+        fromRiver: InputTarget.acrossRiver,
+      ),
+    );
+  return situation;
+}
+
+/// テスト局面と一致する詳細アクション履歴を生成します。
+RoundActionHistory _intentHistory(GameSituation situation) {
+  final history = RoundActionHistory();
+  for (final tile in situation.upperRiver) {
+    history.appendDiscard(
+      actor: InputTarget.upperRiver,
+      tile: tile,
+      turn: history.nextSequence,
+    );
+  }
+  history.appendMeld(meld: situation.melds.single);
+  return history;
 }
 
 /// 画面下部の牌パレットまでスクロールします。

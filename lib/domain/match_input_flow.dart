@@ -2,6 +2,7 @@ import 'game_situation.dart';
 import 'meld.dart';
 import 'round_progress.dart';
 import 'round_result.dart';
+import 'round_action_history.dart';
 import 'tile.dart';
 
 export 'round_result.dart' show RoundEndReason, RoundResult, SeatPosition;
@@ -9,26 +10,36 @@ export 'round_result.dart' show RoundEndReason, RoundResult, SeatPosition;
 /// 鳴きの対象にできる直前の打牌です。
 class DiscardEvent {
   /// 打牌者と牌を保持するイベントを生成します。
-  const DiscardEvent(this.river, this.tile);
+  const DiscardEvent(this.river, this.tile, {this.actionId});
 
   /// 打牌者に対応する河です。
   final InputTarget river;
 
   /// 打牌された牌です。
   final Tile tile;
+
+  /// 公開アクション履歴内の打牌IDです。互換入力では null です。
+  final int? actionId;
 }
 
 /// 対局開始前の条件と、開始後の河入力順を管理します。
 class MatchInputFlow {
   /// 指定した局面を使う入力フローを生成します。
-  MatchInputFlow(this.situation, {RoundProgress? progress})
-    : progress = progress ?? RoundProgress();
+  MatchInputFlow(
+    this.situation, {
+    RoundProgress? progress,
+    RoundActionHistory? actionHistory,
+  }) : progress = progress ?? RoundProgress(),
+       actionHistory = actionHistory ?? RoundActionHistory();
 
   /// 入力対象となる局面です。
   final GameSituation situation;
 
   /// 局、巡目、残りツモ回数の進行状態です。
   final RoundProgress progress;
+
+  /// 役・待ち推定に使う局内の公開アクション履歴です。
+  final RoundActionHistory actionHistory;
 
   /// 選択中の親です。
   SeatPosition dealer = SeatPosition.self;
@@ -90,6 +101,7 @@ class MatchInputFlow {
         currentRiver == InputTarget.ownRiver &&
         situation.hand.length < activeHandLimit;
     _discardHistory.clear();
+    actionHistory.seedFromSituation(situation, turn: progress.turn);
     return true;
   }
 
@@ -124,6 +136,7 @@ class MatchInputFlow {
     lastDiscard = null;
     _turnNeedsDraw = false;
     _discardHistory.clear();
+    actionHistory.clearForNextRound();
   }
 
   /// 打牌順に次の河へ進めます。
@@ -133,16 +146,28 @@ class MatchInputFlow {
   }
 
   /// 打牌を記録して次打者へ進めます。次局へ進んだ場合は true です。
-  bool recordDiscard(InputTarget river, Tile tile) {
+  bool recordDiscard(
+    InputTarget river,
+    Tile tile, {
+    DiscardSource source = DiscardSource.unknown,
+    bool declaresRiichi = false,
+  }) {
     final progressBeforeDiscard = progress.snapshot();
     final neededDraw = _turnNeedsDraw;
     if (neededDraw && river != InputTarget.ownRiver) {
       progress.recordDraw();
     }
-    _discardHistory.add(
-      _FlowDiscardAction(river, progressBeforeDiscard, neededDraw),
+    final action = actionHistory.appendDiscard(
+      actor: river,
+      tile: tile,
+      turn: progressBeforeDiscard.turn,
+      source: source,
+      declaresRiichi: declaresRiichi,
     );
-    lastDiscard = DiscardEvent(river, tile);
+    _discardHistory.add(
+      _FlowDiscardAction(river, progressBeforeDiscard, neededDraw, action.id),
+    );
+    lastDiscard = DiscardEvent(river, tile, actionId: action.id);
     if (progress.recordDiscard()) {
       lastRoundResult = RoundResult(
         reason: RoundEndReason.exhaustiveDraw,
@@ -175,8 +200,14 @@ class MatchInputFlow {
   }
 
   /// 鳴いた人へ次の打牌入力先を変更します。
-  bool acceptCall(MeldType type, InputTarget callerRiver) {
+  bool acceptCall(MeldType type, InputTarget callerRiver, {Meld? meld}) {
     if (!callersFor(type).contains(callerRiver)) return false;
+    if (meld != null) {
+      actionHistory.appendMeld(
+        meld: meld,
+        calledDiscardId: lastDiscard?.actionId,
+      );
+    }
     currentRiver = callerRiver;
     lastDiscard = null;
     _turnNeedsDraw = type == MeldType.kan;
@@ -184,23 +215,27 @@ class MatchInputFlow {
   }
 
   /// 自分の番の暗槓・加槓を受け付け、嶺上牌の入力待ちにします。
-  bool acceptSelfKan() {
+  bool acceptSelfKan({Meld? meld}) {
     if (!canOwnDiscard) return false;
+    if (meld != null) actionHistory.appendMeld(meld: meld);
     lastDiscard = null;
     _turnNeedsDraw = true;
     return true;
   }
 
   /// 嶺上牌入力前の暗槓・加槓を取り消し、打牌可能へ戻します。
-  bool cancelSelfKan() {
+  bool cancelSelfKan({Meld? meld}) {
     if (!ownDrawRequired) return false;
+    if (meld != null) actionHistory.removeMeld(meld);
     _turnNeedsDraw = false;
     return true;
   }
 
   /// 副露の取り消し後、元の打牌を再び鳴き対象として復元します。
-  void restoreCallOpportunity(InputTarget river, Tile tile) {
-    lastDiscard = DiscardEvent(river, tile);
+  void restoreCallOpportunity(InputTarget river, Tile tile, {Meld? meld}) {
+    if (meld != null) actionHistory.removeMeld(meld);
+    final discard = actionHistory.latestVisibleDiscard(river, tile);
+    lastDiscard = DiscardEvent(river, tile, actionId: discard?.id);
     currentRiver = nextRiver(river);
     _turnNeedsDraw = true;
   }
@@ -248,6 +283,7 @@ class MatchInputFlow {
       if (action != null && action.river == river) {
         progress.restore(action.progressBeforeDiscard);
         _turnNeedsDraw = action.neededDraw;
+        actionHistory.removeFrom(action.actionId);
         _discardHistory.removeLast();
       } else {
         _turnNeedsDraw = false;
@@ -289,6 +325,7 @@ class MatchInputFlow {
     _turnNeedsDraw = false;
     _discardHistory.clear();
     situation.clearForNextRound();
+    actionHistory.clearForNextRound();
   }
 
   /// 連荘なしの通常進行で次の親位置を返します。
@@ -319,9 +356,11 @@ class _FlowDiscardAction {
     this.river,
     this.progressBeforeDiscard,
     this.neededDraw,
+    this.actionId,
   );
 
   final InputTarget river;
   final RoundProgressSnapshot progressBeforeDiscard;
   final bool neededDraw;
+  final int actionId;
 }
