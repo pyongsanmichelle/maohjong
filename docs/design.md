@@ -200,3 +200,4 @@ infrastructure
 ## 9. 関連設計書
 
 - [守備分析 基本設計書](danger_analysis_design.md)
+- [対戦相手の狙い役・待ち牌推定 基本設計書](opponent_intent_analysis_design.md)
