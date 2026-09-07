@@ -4,9 +4,11 @@ import 'domain/game_situation.dart';
 import 'domain/match_input_flow.dart';
 import 'domain/meld.dart';
 import 'domain/round_progress.dart';
+import 'domain/round_action_history.dart';
 import 'domain/situation_editor.dart';
 import 'domain/tile.dart';
 import 'presentation/danger_analysis_page.dart';
+import 'presentation/discard_metadata_editor.dart';
 import 'presentation/hand_danger_presentation.dart';
 import 'presentation/kan_dialog.dart';
 import 'presentation/round_end_dialog.dart';
@@ -69,7 +71,11 @@ class _SituationInputPageState extends State<SituationInputPage> {
   }
 
   /// 選択中の編集先へ牌を追加し、上限時には理由を表示します。
-  void _add(Tile tile) {
+  void _add(
+    Tile tile, {
+    DiscardSource source = DiscardSource.unknown,
+    bool declaresRiichi = false,
+  }) {
     final target = _isOwnDiscardTurn ? InputTarget.hand : _visibleTarget;
     if (_isOwnDiscardTurn && !_flow.ownDrawRequired) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -94,7 +100,12 @@ class _SituationInputPageState extends State<SituationInputPage> {
         if (_isOwnDiscardTurn && target == InputTarget.hand) {
           _flow.markOwnDrawn();
         } else if (_flow.started && target != InputTarget.hand) {
-          roundAdvanced = _flow.recordDiscard(target, tile);
+          roundAdvanced = _flow.recordDiscard(
+            target,
+            tile,
+            source: source,
+            declaresRiichi: declaresRiichi,
+          );
         }
       });
       if (roundAdvanced) _finishRoundInput();
@@ -104,10 +115,35 @@ class _SituationInputPageState extends State<SituationInputPage> {
         .showSnackBar(const SnackBar(content: Text('同じ牌は4枚までです。')));
   }
 
+  /// 相手の打牌を手出し・ツモ切り・リーチ属性付きで追加します。
+  Future<void> _addDiscardWithMetadata(Tile tile) async {
+    if (!_flow.started ||
+        !_isRiverTarget(_visibleTarget) ||
+        _visibleTarget == InputTarget.ownRiver) {
+      return;
+    }
+    final selection = await showDialog<DiscardMetadataSelection>(
+      context: context,
+      builder: (context) => DiscardMetadataEditor(tile: tile),
+    );
+    if (!mounted || selection == null) return;
+    _add(
+      tile,
+      source: selection.source,
+      declaresRiichi: selection.declaresRiichi,
+    );
+  }
+
   /// 指定領域の指定位置にある牌を削除します。
-  void _remove(InputTarget target, int index) => setState(() {
-    _editor.removeAt(target, index);
-  });
+  void _remove(InputTarget target, int index) {
+    if (_flow.started && _isRiverTarget(target)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('対局中の河訂正は「取り消し」または打牌履歴の編集を使ってください。')),
+      );
+      return;
+    }
+    setState(() => _editor.removeAt(target, index));
+  }
 
   /// 自分の手牌から選んだ牌を河へ移し、次の打牌者へ進めます。
   void _discardFromHand(int index) {
@@ -174,7 +210,9 @@ class _SituationInputPageState extends State<SituationInputPage> {
       ).showSnackBar(const SnackBar(content: Text('副露に必要な牌または残り枚数が不足しています。')));
       return;
     }
-    setState(() => _flow.acceptCall(selection.type, selection.callerRiver));
+    setState(
+      () => _flow.acceptCall(selection.type, selection.callerRiver, meld: meld),
+    );
   }
 
   /// 開始時点ですでに成立しているカンを登録します。
@@ -225,7 +263,7 @@ class _SituationInputPageState extends State<SituationInputPage> {
       );
       return;
     }
-    setState(_flow.acceptSelfKan);
+    setState(() => _flow.acceptSelfKan(meld: meld));
   }
 
   /// 副露を取り消して、鳴かれた打牌と通常の手番を復元します。
@@ -247,13 +285,17 @@ class _SituationInputPageState extends State<SituationInputPage> {
         case MeldOrigin.call:
           final fromRiver = meld.fromRiver;
           if (fromRiver != null) {
-            _flow.restoreCallOpportunity(fromRiver, meld.calledTile);
+            _flow.restoreCallOpportunity(
+              fromRiver,
+              meld.calledTile,
+              meld: meld,
+            );
           }
           break;
         case MeldOrigin.setup:
           break;
         case MeldOrigin.selfKan:
-          _flow.cancelSelfKan();
+          _flow.cancelSelfKan(meld: meld);
           break;
       }
     });
@@ -296,11 +338,17 @@ class _SituationInputPageState extends State<SituationInputPage> {
     _target = InputTarget.hand;
   });
 
-  /// 現在の入力局面を使う守備分析画面を開きます。
+  /// 現在の入力局面を使う相手分析画面を開きます。
   void _openDangerAnalysis() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => DangerAnalysisPage(situation: _editor.situation),
+        builder: (context) => DangerAnalysisPage(
+          situation: _editor.situation,
+          roundWind: _flow.progress.roundWind,
+          dealer: _flow.dealer,
+          turn: _flow.progress.turn,
+          actionHistory: _flow.actionHistory,
+        ),
       ),
     );
   }
@@ -486,6 +534,11 @@ class _SituationInputPageState extends State<SituationInputPage> {
                       const SizedBox(height: 4),
                       _TilePalette(
                         onTap: _add,
+                        onLongPress:
+                            _isRiverTarget(_visibleTarget) &&
+                                _visibleTarget != InputTarget.ownRiver
+                            ? _addDiscardWithMetadata
+                            : null,
                         remainingCopies: _editor.remainingCopies,
                         compact: true,
                       ),
@@ -565,11 +618,9 @@ class _SituationInputPageState extends State<SituationInputPage> {
       if (_flow.started)
         OutlinedButton.icon(
           key: const Key('dangerAnalysisButton'),
-          onPressed: _editor.situation.hand.isEmpty
-              ? null
-              : _openDangerAnalysis,
+          onPressed: _openDangerAnalysis,
           icon: const Icon(Icons.shield_outlined),
-          label: const Text('守備分析'),
+          label: const Text('相手分析'),
         ),
       if (!_flow.started)
         FilledButton.icon(
@@ -1187,10 +1238,14 @@ class _TilePalette extends StatelessWidget {
   const _TilePalette({
     required this.onTap,
     required this.remainingCopies,
+    this.onLongPress,
     this.compact = false,
   });
 
   final ValueChanged<Tile> onTap;
+
+  /// 詳細属性を付けて入力するための長押し処理です。
+  final ValueChanged<Tile>? onLongPress;
 
   /// 見えている牌を差し引いた、各牌の未確認枚数を返します。
   final int Function(Tile) remainingCopies;
@@ -1231,6 +1286,9 @@ class _TilePalette extends StatelessWidget {
             fitHeight: compact ? 38 : null,
             remainingCopies: remaining,
             onTap: remaining == 0 ? null : () => onTap(tile),
+            onLongPress: remaining == 0 || onLongPress == null
+                ? null
+                : () => onLongPress!(tile),
           ),
         );
       }).toList(),

@@ -4,10 +4,17 @@ import '../application/analyze_danger_use_case.dart';
 import '../domain/danger_assessment.dart';
 import '../domain/game_situation.dart';
 import '../domain/opponent.dart';
+import '../domain/round_action_history.dart';
+import '../domain/round_progress.dart';
+import '../domain/round_result.dart';
 import '../domain/tile.dart';
 import 'danger_reason_formatter.dart';
 import 'hand_danger_presentation.dart';
+import 'opponent_intent_view.dart';
 import 'tile_presentation.dart';
+
+/// 相手分析画面で切り替える分析の種類です。
+enum OpponentAnalysisMode { danger, intent }
 
 /// 自分の手牌について、相手別の危険度と理由を表示する画面です。
 class DangerAnalysisPage extends StatefulWidget {
@@ -16,6 +23,10 @@ class DangerAnalysisPage extends StatefulWidget {
     super.key,
     required this.situation,
     this.useCase = const AnalyzeDangerUseCase(),
+    this.roundWind = RoundWind.east,
+    this.dealer = SeatPosition.self,
+    this.turn = 1,
+    this.actionHistory,
   });
 
   /// 局面入力画面で作成された現在の局面です。
@@ -23,6 +34,18 @@ class DangerAnalysisPage extends StatefulWidget {
 
   /// 守備分析を実行するアプリケーションサービスです。
   final AnalyzeDangerUseCase useCase;
+
+  /// 現在の場風です。
+  final RoundWind roundWind;
+
+  /// 現在の親位置です。
+  final SeatPosition dealer;
+
+  /// 現在の巡目です。
+  final int turn;
+
+  /// 手出し・ツモ切り・リーチを含む公開アクション履歴です。
+  final RoundActionHistory? actionHistory;
 
   @override
   State<DangerAnalysisPage> createState() => _DangerAnalysisPageState();
@@ -32,6 +55,7 @@ class DangerAnalysisPage extends StatefulWidget {
 class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
   Opponent _opponent = Opponent.upper;
   DangerSortOrder _sortOrder = DangerSortOrder.hand;
+  OpponentAnalysisMode _mode = OpponentAnalysisMode.danger;
   Tile? _selectedTile;
   final DangerReasonFormatter _formatter = const DangerReasonFormatter();
 
@@ -46,6 +70,11 @@ class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
     _sortOrder = sortOrder;
   });
 
+  /// 危険牌表示と狙い役・待ち表示を切り替えます。
+  void _selectMode(OpponentAnalysisMode mode) => setState(() {
+    _mode = mode;
+  });
+
   /// 指定した牌の判定理由を詳細欄に表示します。
   void _selectTile(Tile tile) => setState(() {
     _selectedTile = tile;
@@ -53,12 +82,54 @@ class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_mode == OpponentAnalysisMode.intent) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('相手分析')),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _OpponentSelector(
+                opponent: _opponent,
+                onChanged: _selectOpponent,
+              ),
+              const SizedBox(height: 10),
+              _AnalysisModeSelector(mode: _mode, onChanged: _selectMode),
+              const SizedBox(height: 10),
+              OpponentIntentView(
+                key: ValueKey(_opponent),
+                situation: widget.situation,
+                opponent: _opponent,
+                roundWind: widget.roundWind,
+                dealer: widget.dealer,
+                turn: widget.turn,
+                actionHistory: widget.actionHistory,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (widget.situation.hand.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('守備分析')),
-        body: const Center(
-          key: Key('dangerEmptyHand'),
-          child: Text('手牌を入力してください。'),
+        appBar: AppBar(title: const Text('相手分析')),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _OpponentSelector(
+                opponent: _opponent,
+                onChanged: _selectOpponent,
+              ),
+              const SizedBox(height: 10),
+              _AnalysisModeSelector(mode: _mode, onChanged: _selectMode),
+              const SizedBox(height: 24),
+              const Center(
+                key: Key('dangerEmptyHand'),
+                child: Text('手牌を入力してください。'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -72,7 +143,7 @@ class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
       );
     } on DangerAnalysisException catch (error) {
       return Scaffold(
-        appBar: AppBar(title: const Text('守備分析')),
+        appBar: AppBar(title: const Text('相手分析')),
         body: Center(
           key: const Key('dangerAnalysisError'),
           child: Padding(
@@ -88,24 +159,14 @@ class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
       orElse: () => assessments.first,
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('守備分析')),
+      appBar: AppBar(title: const Text('相手分析')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            SegmentedButton<Opponent>(
-              key: const Key('opponentSelector'),
-              segments: Opponent.values
-                  .map(
-                    (opponent) => ButtonSegment(
-                      value: opponent,
-                      label: Text(dangerOpponentLabel(opponent)),
-                    ),
-                  )
-                  .toList(),
-              selected: {_opponent},
-              onSelectionChanged: (values) => _selectOpponent(values.first),
-            ),
+            _OpponentSelector(opponent: _opponent, onChanged: _selectOpponent),
+            const SizedBox(height: 10),
+            _AnalysisModeSelector(mode: _mode, onChanged: _selectMode),
             const SizedBox(height: 10),
             const Card(
               key: Key('dangerNotice'),
@@ -159,6 +220,50 @@ class _DangerAnalysisPageState extends State<DangerAnalysisPage> {
       situation.tilesFor(opponent.river).isNotEmpty ||
       situation.meldsFor(opponent.river).isNotEmpty ||
       situation.melds.any((meld) => meld.fromRiver == opponent.river);
+}
+
+/// 上家・対面・下家を共通の位置で切り替えます。
+class _OpponentSelector extends StatelessWidget {
+  /// 選択中の相手と変更処理を受け取ります。
+  const _OpponentSelector({required this.opponent, required this.onChanged});
+
+  final Opponent opponent;
+  final ValueChanged<Opponent> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SegmentedButton<Opponent>(
+    key: const Key('opponentSelector'),
+    segments: Opponent.values
+        .map(
+          (value) => ButtonSegment(
+            value: value,
+            label: Text(dangerOpponentLabel(value)),
+          ),
+        )
+        .toList(),
+    selected: {opponent},
+    onSelectionChanged: (values) => onChanged(values.first),
+  );
+}
+
+/// 危険牌と狙い役・待ちの表示を切り替えます。
+class _AnalysisModeSelector extends StatelessWidget {
+  /// 選択中の分析種別と変更処理を受け取ります。
+  const _AnalysisModeSelector({required this.mode, required this.onChanged});
+
+  final OpponentAnalysisMode mode;
+  final ValueChanged<OpponentAnalysisMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SegmentedButton<OpponentAnalysisMode>(
+    key: const Key('analysisModeSelector'),
+    segments: const [
+      ButtonSegment(value: OpponentAnalysisMode.danger, label: Text('危険牌')),
+      ButtonSegment(value: OpponentAnalysisMode.intent, label: Text('狙い役・待ち')),
+    ],
+    selected: {mode},
+    onSelectionChanged: (values) => onChanged(values.first),
+  );
 }
 
 /// 最大7列で、牌ごとの危険度カードを表示します。

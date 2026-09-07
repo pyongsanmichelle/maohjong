@@ -94,9 +94,14 @@ class SituationEditor {
   bool removeMeld(Meld meld) {
     if (meld.origin == MeldOrigin.call && meld.fromRiver == null) return false;
     if (!situation.melds.remove(meld)) return false;
+    _InputAction? restoredDiscard;
     switch (meld.origin) {
       case MeldOrigin.call:
         situation.tilesFor(meld.fromRiver!).add(meld.calledTile);
+        restoredDiscard = _InputAction.addition(
+          meld.fromRiver!,
+          meld.calledTile,
+        );
         if (meld.ownerRiver == InputTarget.ownRiver) {
           final concealedTiles = List<Tile>.from(meld.tiles)
             ..remove(meld.calledTile);
@@ -125,6 +130,7 @@ class SituationEditor {
         break;
     }
     clearHistory();
+    if (restoredDiscard != null) _history.add(restoredDiscard);
     return true;
   }
 
