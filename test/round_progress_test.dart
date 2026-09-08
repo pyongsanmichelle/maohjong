@@ -5,9 +5,25 @@ import 'package:maohjong/domain/round_progress.dart';
 import 'package:maohjong/domain/tile.dart';
 
 void main() {
+  test('新しい対局へ戻すと東1局1巡目と残り69回になる', () {
+    final progress = RoundProgress(
+      roundWind: RoundWind.south,
+      kyoku: 4,
+      turn: 18,
+    );
+    progress.advanceRound();
+
+    progress.resetForNewMatch();
+
+    expect(progress.roundWind, RoundWind.east);
+    expect(progress.kyoku, 1);
+    expect(progress.turn, 1);
+    expect(progress.remainingDraws, RoundProgress.initialDraws);
+    expect(progress.matchFinished, isFalse);
+  });
   test('通常進行では4人分の打牌で巡目を進めツモ回数を減らす', () {
     final situation = GameSituation()
-      ..hand.addAll(List.filled(14, Tile.m1))
+      ..hand.addAll(Tile.values.take(14))
       ..doraIndicators.add(Tile.p1);
     final progress = RoundProgress();
     final flow = MatchInputFlow(situation, progress: progress);
@@ -30,7 +46,7 @@ void main() {
 
   test('残りツモが尽きた最後の打牌後に次局へ進み局面を初期化する', () {
     final situation = GameSituation()
-      ..hand.addAll(List.filled(14, Tile.m1))
+      ..hand.addAll(Tile.values.take(14))
       ..doraIndicators.add(Tile.p1);
     final progress = RoundProgress(turn: 18);
     final flow = MatchInputFlow(situation, progress: progress);

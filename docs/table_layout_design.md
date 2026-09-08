@@ -173,6 +173,8 @@ tableTileHeight = paletteTileHeight × 0.5
 
 開始前の既存入力UIを担当する。局・巡目、親、入力先タブ、開始時点のカン、開始ボタンを表示する。既存実装を段階的に抽出し、Issue 5では挙動を変更しない。
 
+Issue 9では開始前画面を簡略化するため、この記述を[対局開始前画面の簡略化 基本設計書](setup_screen_simplification_design.md)で置き換える。開始後の`StartedTableLayout`は引き続き本書を正とする。
+
 ### 6.3 StartedTableLayout
 
 対局開始後の画面骨格を担当する。次のデータとコールバックを受け取る表示用Widgetとする。

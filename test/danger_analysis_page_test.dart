@@ -158,13 +158,13 @@ void main() {
   testWidgets('対局開始後に局面入力画面から守備分析を開ける', (tester) async {
     await tester.pumpWidget(const MaohjongApp());
 
-    await tester.tap(find.byKey(const Key('targetTab-doraIndicators')));
+    await tester.tap(find.byKey(const Key('setupTarget-doraIndicators')));
     await tester.pump();
     await _showTilePalette(tester);
     await tester.tap(find.byKey(const Key('palette-p9')));
     await tester.pump();
     await _showInputAreas(tester);
-    await tester.tap(find.byKey(const Key('targetTab-hand')));
+    await tester.tap(find.byKey(const Key('setupTarget-hand')));
     await tester.pump();
     await _showTilePalette(tester);
     await tester.tap(find.byKey(const Key('palette-m1')));

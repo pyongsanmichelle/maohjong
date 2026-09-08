@@ -6,6 +6,32 @@ import 'package:maohjong/domain/round_progress.dart';
 import 'package:maohjong/domain/tile.dart';
 
 void main() {
+  test('新しい対局への初期化で局面・進行・履歴と親を初期化する', () {
+    final situation = GameSituation()
+      ..hand.add(Tile.m1)
+      ..doraIndicators.add(Tile.p9);
+    final progress = RoundProgress(
+      roundWind: RoundWind.south,
+      kyoku: 4,
+      turn: 18,
+    );
+    final flow = MatchInputFlow(situation, progress: progress)
+      ..selectDealer(SeatPosition.upper)
+      ..start();
+
+    flow.resetForNewMatch();
+
+    expect(flow.started, isFalse);
+    expect(flow.dealer, SeatPosition.self);
+    expect(flow.lastDiscard, isNull);
+    expect(flow.lastRoundResult, isNull);
+    expect(progress.roundWind, RoundWind.east);
+    expect(progress.kyoku, 1);
+    expect(progress.turn, 1);
+    expect(situation.hand, isEmpty);
+    expect(situation.doraIndicators, isEmpty);
+    expect(flow.actionHistory.actions, isEmpty);
+  });
   test('親の河から打牌順に入力先を切り替える', () {
     final situation = GameSituation()
       ..hand.add(Tile.m1)
@@ -30,7 +56,7 @@ void main() {
   });
 
   test('自分が親なら14枚、子なら13枚を手牌上限にする', () {
-    final situation = GameSituation()..hand.addAll(List.filled(14, Tile.m1));
+    final situation = GameSituation()..hand.addAll(Tile.values.take(14));
     final flow = MatchInputFlow(situation);
 
     expect(flow.handLimit, 14);
@@ -63,7 +89,7 @@ void main() {
 
   test('14枚で開始した親は初回だけツモ入力なしで打牌できる', () {
     final situation = GameSituation()
-      ..hand.addAll(List.filled(14, Tile.m1))
+      ..hand.addAll(Tile.values.take(14))
       ..doraIndicators.add(Tile.p1);
     final flow = MatchInputFlow(situation);
 
@@ -93,7 +119,7 @@ void main() {
 
   test('自分の副露数に応じて開始前と開始後の手牌上限を減らす', () {
     final situation = GameSituation()
-      ..hand.addAll(List.filled(11, Tile.m1))
+      ..hand.addAll(Tile.values.take(11))
       ..doraIndicators.add(Tile.p1)
       ..melds.add(
         Meld(
@@ -117,7 +143,7 @@ void main() {
 
   test('自分の暗槓・加槓後は嶺上牌を入力するまで打牌できない', () {
     final situation = GameSituation()
-      ..hand.addAll(List.filled(14, Tile.m1))
+      ..hand.addAll(Tile.values.take(14))
       ..doraIndicators.add(Tile.p1);
     final flow = MatchInputFlow(situation);
 

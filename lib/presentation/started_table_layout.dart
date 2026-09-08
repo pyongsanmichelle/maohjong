@@ -18,6 +18,7 @@ class StartedTableLayout extends StatelessWidget {
     required this.activeRiver,
     required this.onRemoveTile,
     required this.onRemoveMeld,
+    required this.onRemoveDora,
   });
 
   /// 表示する手牌、河、ドラ表示牌、副露を含む局面です。
@@ -38,6 +39,9 @@ class StartedTableLayout extends StatelessWidget {
   /// 副露を訂正する処理です。
   final ValueChanged<Meld> onRemoveMeld;
 
+  /// ドラ表示牌を訂正する処理です。
+  final ValueChanged<int> onRemoveDora;
+
   @override
   Widget build(BuildContext context) => Column(
     key: const Key('startedTableLayout'),
@@ -51,6 +55,7 @@ class StartedTableLayout extends StatelessWidget {
           activeRiver: activeRiver,
           onRemoveTile: onRemoveTile,
           onRemoveMeld: onRemoveMeld,
+          onRemoveDora: onRemoveDora,
         ),
       ),
     ],
@@ -112,6 +117,7 @@ class _TableBoard extends StatelessWidget {
     required this.activeRiver,
     required this.onRemoveTile,
     required this.onRemoveMeld,
+    required this.onRemoveDora,
   });
 
   /// 表示対象の局面です。
@@ -125,6 +131,9 @@ class _TableBoard extends StatelessWidget {
 
   /// 副露を訂正する処理です。
   final ValueChanged<Meld> onRemoveMeld;
+
+  /// ドラ表示牌を訂正する処理です。
+  final ValueChanged<int> onRemoveDora;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -175,6 +184,7 @@ class _TableBoard extends StatelessWidget {
                     child: _DoraZone(
                       tiles: situation.doraIndicators,
                       metrics: metrics,
+                      onRemove: onRemoveDora,
                     ),
                   ),
                   Expanded(
@@ -329,13 +339,20 @@ class _PlayerZone extends StatelessWidget {
 /// 卓中央に複数のドラ表示牌を並べます。
 class _DoraZone extends StatelessWidget {
   /// ドラ表示牌の領域を生成します。
-  const _DoraZone({required this.tiles, required this.metrics});
+  const _DoraZone({
+    required this.tiles,
+    required this.metrics,
+    required this.onRemove,
+  });
 
   /// 表示するドラ表示牌です。
   final List<Tile> tiles;
 
   /// 卓上牌の共通サイズです。
   final _TableTileMetrics metrics;
+
+  /// タップしたドラ表示牌を削除する処理です。
+  final ValueChanged<int> onRemove;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -364,6 +381,7 @@ class _DoraZone extends StatelessWidget {
               width: metrics.width,
               height: metrics.height,
               semanticPrefix: 'ドラ表示牌${index + 1}枚目',
+              onTap: () => onRemove(index),
             ),
           ),
         ),
@@ -468,7 +486,7 @@ class _TableTile extends StatelessWidget {
   /// 読み上げ時に牌の所属を伝える接頭辞です。
   final String semanticPrefix;
 
-  /// 訂正操作です。ドラ表示牌では null です。
+  /// 牌の訂正操作です。操作できない場合は null です。
   final VoidCallback? onTap;
 
   @override

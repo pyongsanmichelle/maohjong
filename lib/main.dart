@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'domain/game_situation.dart';
 import 'domain/match_input_flow.dart';
+import 'domain/match_setup_validation.dart';
 import 'domain/meld.dart';
 import 'domain/round_progress.dart';
 import 'domain/round_action_history.dart';
@@ -77,6 +78,14 @@ class _SituationInputPageState extends State<SituationInputPage> {
     bool declaresRiichi = false,
   }) {
     final target = _isOwnDiscardTurn ? InputTarget.hand : _visibleTarget;
+    if (!_flow.started &&
+        target == InputTarget.doraIndicators &&
+        _editor.situation.doraIndicators.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('開始前のドラ表示牌は1枚です。選び直す場合は表示牌をタップしてください。')),
+      );
+      return;
+    }
     if (_isOwnDiscardTurn && !_flow.ownDrawRequired) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('ツモ入力は完了しています。先に手牌から打牌してください。')),
@@ -246,6 +255,44 @@ class _SituationInputPageState extends State<SituationInputPage> {
     setState(() {});
   }
 
+  /// 開始後の手番を変えずに、追加のドラ表示牌を1枚選びます。
+  Future<void> _showDoraIndicatorPicker() async {
+    final tile = await showModalBottomSheet<Tile>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '追加するドラ表示牌',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                _TilePalette(
+                  onTap: (tile) => Navigator.pop(context, tile),
+                  remainingCopies: _editor.remainingCopies,
+                  compact: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || tile == null) return;
+    if (!_editor.add(InputTarget.doraIndicators, tile)) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('同じ牌は4枚までです。')));
+      return;
+    }
+    setState(() {});
+  }
+
   /// 自分の打牌可能な番に暗槓または加槓を確定します。
   Future<void> _showSelfKanDialog() async {
     if (!_flow.canOwnDiscard) return;
@@ -268,12 +315,6 @@ class _SituationInputPageState extends State<SituationInputPage> {
 
   /// 副露を取り消して、鳴かれた打牌と通常の手番を復元します。
   void _removeMeld(Meld meld) {
-    if (_flow.started && meld.origin == MeldOrigin.setup) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('開始時点のカンは「設定に戻る」から訂正してください。')),
-      );
-      return;
-    }
     if (meld.origin == MeldOrigin.selfKan && !_flow.ownDrawRequired) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('嶺上牌を入力した後はカンを取り消せません。')));
@@ -330,6 +371,13 @@ class _SituationInputPageState extends State<SituationInputPage> {
   void _start() => setState(() {
     _editor.clearHistory();
     _flow.start();
+  });
+
+  /// 半荘終了後の局面と履歴を破棄し、東1局の準備へ戻します。
+  void _startNewMatch() => setState(() {
+    _flow.resetForNewMatch();
+    _editor.clearHistory();
+    _target = InputTarget.hand;
   });
 
   /// 入力済みの牌を保持したまま準備画面へ戻ります。
@@ -390,102 +438,99 @@ class _SituationInputPageState extends State<SituationInputPage> {
     }
   }
 
-  /// 開始前の設定、タブ入力、牌パレットを従来どおり表示します。
-  Widget _buildSetupBody() => ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      _RoundInput(
-        roundWind: _flow.progress.roundWind,
-        kyoku: _flow.progress.kyoku,
-        turn: _flow.progress.turn,
-        remainingDraws: _flow.progress.remainingDraws,
-        enabled: true,
-        onRoundWindChanged: (value) =>
-            setState(() => _flow.progress.selectRoundWind(value)),
-        onKyokuChanged: (value) =>
-            setState(() => _flow.progress.selectKyoku(value)),
-        onTurnChanged: (value) =>
-            setState(() => _flow.progress.selectTurn(value)),
-      ),
-      const SizedBox(height: 12),
-      _DealerSelector(
-        dealer: _flow.dealer,
-        enabled: true,
-        onChanged: _selectDealer,
-      ),
-      const SizedBox(height: 8),
-      DefaultTabController(
-        key: ValueKey(_target),
-        length: InputTarget.values.length,
-        initialIndex: _target.index,
-        child: TabBar(
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          onTap: (index) => setState(() => _target = InputTarget.values[index]),
-          tabs: InputTarget.values
-              .map(
-                (target) => Tab(
-                  key: Key('targetTab-${target.name}'),
-                  text: _targetTabLabel(target),
-                ),
-              )
-              .toList(),
-        ),
-      ),
-      const SizedBox(height: 12),
-      if (_visibleTarget == InputTarget.hand)
-        const Card(
+  /// 開始前に手牌と最初のドラを同時表示する簡略入力画面です。
+  Widget _buildSetupBody() {
+    if (_flow.progress.matchFinished) {
+      return Center(
+        child: Card(
           child: Padding(
-            padding: EdgeInsets.all(10),
-            child: Text('自分の手牌は画面下部に常時表示しています。'),
-          ),
-        )
-      else
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _TileArea(
-              key: Key('targetArea-${_visibleTarget.name}'),
-              label: _targetLabel(_visibleTarget),
-              tiles: _editor.situation.tilesFor(_visibleTarget),
-              selected: true,
-              onRemove: (index) => _remove(_visibleTarget, index),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('半荘終了です。'),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  key: const Key('newMatchButton'),
+                  onPressed: _startNewMatch,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('新しい対局'),
+                ),
+              ],
             ),
-            if (_isRiverTarget(_visibleTarget) &&
-                _visibleTarget != InputTarget.ownRiver)
-              _MeldArea(
-                river: _visibleTarget,
-                melds: _editor.situation.meldsFor(_visibleTarget).toList(),
-                onRemove: _removeMeld,
-              ),
-          ],
+          ),
         ),
-      _buildActionControls(),
-      if (_flow.progress.matchFinished)
-        const Padding(
-          padding: EdgeInsets.only(top: 6),
-          child: Text('半荘終了です。新しく始める場合は場・局・巡目を選び直してください。'),
-        )
-      else if (!_flow.canStart)
-        const Padding(
-          padding: EdgeInsets.only(top: 6),
-          child: Text('開始するには、ドラ表示牌と自分の手牌を入力してください。'),
+      );
+    }
+    final validation = _flow.setupValidation;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          '${_roundWindLabel(_flow.progress.roundWind)}${_flow.progress.kyoku}局・'
+          '${_flow.progress.turn}巡目',
+          key: const Key('setupRoundStatus'),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
         ),
-      const SizedBox(height: 20),
-      const Text(
-        '牌を選ぶ',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
-      const SizedBox(height: 8),
-      _TilePalette(onTap: _add, remainingCopies: _editor.remainingCopies),
-    ],
-  );
+        const SizedBox(height: 8),
+        _DealerSelector(
+          dealer: _flow.dealer,
+          enabled: true,
+          onChanged: _selectDealer,
+        ),
+        const SizedBox(height: 8),
+        _SetupTargetCard(
+          key: const Key('setupTarget-hand'),
+          label: '自分の手牌',
+          selected: _target == InputTarget.hand,
+          countLabel: '${_editor.situation.hand.length}/${_flow.handLimit}枚',
+          onTap: () => setState(() => _target = InputTarget.hand),
+          child: _SetupTileStrip(
+            key: const Key('targetArea-hand'),
+            tiles: _editor.situation.hand,
+            tileKeyPrefix: 'handTile',
+            onRemove: (index) => _remove(InputTarget.hand, index),
+          ),
+        ),
+        _SetupTargetCard(
+          key: const Key('setupTarget-doraIndicators'),
+          label: '最初のドラ表示牌',
+          selected: _target == InputTarget.doraIndicators,
+          countLabel: '${_editor.situation.doraIndicators.length}/1枚',
+          onTap: () => setState(() => _target = InputTarget.doraIndicators),
+          child: _SetupTileStrip(
+            key: const Key('targetArea-doraIndicators'),
+            tiles: _editor.situation.doraIndicators,
+            tileKeyPrefix: 'setupDoraTile',
+            onRemove: (index) => _remove(InputTarget.doraIndicators, index),
+          ),
+        ),
+        _buildActionControls(),
+        if (!validation.canStart)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _setupIssueMessage(validation.issues.first),
+              key: const Key('setupValidationMessage'),
+            ),
+          ),
+        const SizedBox(height: 20),
+        const Text(
+          '牌を選ぶ',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        _TilePalette(onTap: _add, remainingCopies: _editor.remainingCopies),
+      ],
+    );
+  }
 
   /// 開始後の卓を固定し、牌パレットだけを内部スクロール可能にします。
   Widget _buildStartedBody() => LayoutBuilder(
     builder: (context, constraints) {
-      final tableHeight = (constraints.maxHeight * 0.46)
-          .clamp(270.0, 320.0)
+      final tableHeight = (constraints.maxHeight * 0.43)
+          .clamp(245.0, 300.0)
           .toDouble();
       return Padding(
         padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
@@ -502,6 +547,8 @@ class _SituationInputPageState extends State<SituationInputPage> {
                     : _flow.currentRiver,
                 onRemoveTile: _remove,
                 onRemoveMeld: _removeMeld,
+                onRemoveDora: (index) =>
+                    _remove(InputTarget.doraIndicators, index),
               ),
             ),
             const SizedBox(height: 4),
@@ -580,11 +627,13 @@ class _SituationInputPageState extends State<SituationInputPage> {
     runSpacing: 6,
     crossAxisAlignment: WrapCrossAlignment.center,
     children: [
-      OutlinedButton.icon(
-        onPressed: _editor.canUndo ? _undo : null,
-        icon: const Icon(Icons.undo),
-        label: const Text('取り消し'),
-      ),
+      if (_flow.started)
+        OutlinedButton.icon(
+          key: const Key('undoButton'),
+          onPressed: _editor.canUndo ? _undo : null,
+          icon: const Icon(Icons.undo),
+          label: const Text('取り消し'),
+        ),
       if (_flow.started && _flow.lastDiscard != null)
         FilledButton.tonalIcon(
           key: const Key('callButton'),
@@ -592,12 +641,19 @@ class _SituationInputPageState extends State<SituationInputPage> {
           icon: const Icon(Icons.call_split),
           label: const Text('チー・ポン・カン'),
         ),
-      if (!_flow.started)
+      if (_flow.started)
         OutlinedButton.icon(
-          key: const Key('setupKanButton'),
+          key: const Key('kanCorrectionButton'),
           onPressed: _showSetupKanDialog,
           icon: const Icon(Icons.view_module_outlined),
-          label: const Text('開始時点のカン'),
+          label: const Text('局面補正'),
+        ),
+      if (_flow.started)
+        OutlinedButton.icon(
+          key: const Key('addDoraButton'),
+          onPressed: _showDoraIndicatorPicker,
+          icon: const Icon(Icons.add_box_outlined),
+          label: const Text('ドラ追加'),
         ),
       if (_isOwnDiscardTurn &&
           _flow.canOwnDiscard &&
@@ -652,29 +708,29 @@ class _SituationInputPageState extends State<SituationInputPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Maohjong 局面入力')),
-    bottomNavigationBar: _PersistentHand(
-      tiles: _editor.situation.hand,
-      limit: _currentHandLimit,
-      started: _flow.started,
-      isOwnDiscardTurn: _isOwnDiscardTurn,
-      ownDrawRequired: _flow.ownDrawRequired,
-      melds: _flow.started
-          ? const []
-          : _editor.situation.meldsFor(InputTarget.ownRiver).toList(),
-      dangerSummaries: _flow.started
-          ? {
-              for (final summary in _handDangerPresenter.summarize(
-                _editor.situation,
-              ))
-                summary.tile: summary,
-            }
-          : const {},
-      onTileTap: _flow.started
-          ? (_isOwnDiscardTurn ? _discardFromHand : null)
-          : (index) => _remove(InputTarget.hand, index),
-      onMeldTap: _removeMeld,
-      onDangerLongPress: _flow.started ? _showHandDangerDetails : null,
-    ),
+    bottomNavigationBar: _flow.started
+        ? _PersistentHand(
+            tiles: _editor.situation.hand,
+            limit: _currentHandLimit,
+            started: _flow.started,
+            isOwnDiscardTurn: _isOwnDiscardTurn,
+            ownDrawRequired: _flow.ownDrawRequired,
+            melds: const [],
+            dangerSummaries: _flow.started
+                ? {
+                    for (final summary in _handDangerPresenter.summarize(
+                      _editor.situation,
+                    ))
+                      summary.tile: summary,
+                  }
+                : const {},
+            onTileTap: _flow.started
+                ? (_isOwnDiscardTurn ? _discardFromHand : null)
+                : (index) => _remove(InputTarget.hand, index),
+            onMeldTap: _removeMeld,
+            onDangerLongPress: _flow.started ? _showHandDangerDetails : null,
+          )
+        : null,
     body: SafeArea(
       child: _flow.started ? _buildStartedBody() : _buildSetupBody(),
     ),
@@ -1082,153 +1138,108 @@ class _DealerSelector extends StatelessWidget {
   );
 }
 
-/// 東場・南場、局番号、巡目を選択する局面情報の入力部品です。
-class _RoundInput extends StatelessWidget {
-  /// 局面情報の入力部品を生成します。
-  const _RoundInput({
-    required this.roundWind,
-    required this.kyoku,
-    required this.turn,
-    required this.remainingDraws,
-    required this.enabled,
-    required this.onRoundWindChanged,
-    required this.onKyokuChanged,
-    required this.onTurnChanged,
-  });
-
-  /// 選択中の場風です。
-  final RoundWind roundWind;
-
-  /// 選択中の局番号です。
-  final int kyoku;
-
-  /// 選択中の巡目です。
-  final int turn;
-
-  /// 通常の山からツモできる残り回数です。
-  final int remainingDraws;
-
-  /// 開始前の局情報を変更可能かどうかです。
-  final bool enabled;
-
-  /// 場風の選択変更を通知します。
-  final ValueChanged<RoundWind> onRoundWindChanged;
-
-  /// 局番号の選択変更を通知します。
-  final ValueChanged<int> onKyokuChanged;
-
-  /// 巡目の選択変更を通知します。
-  final ValueChanged<int> onTurnChanged;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        '${_roundWindLabel(roundWind)}$kyoku局・$turn巡目',
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      Text(
-        '残りツモ $remainingDraws回',
-        key: const Key('remainingDraws'),
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SegmentedButton<RoundWind>(
-            segments: const [
-              ButtonSegment(value: RoundWind.east, label: Text('東場')),
-              ButtonSegment(value: RoundWind.south, label: Text('南場')),
-            ],
-            selected: {roundWind},
-            onSelectionChanged: enabled
-                ? (items) => onRoundWindChanged(items.first)
-                : null,
-          ),
-          DropdownButton<int>(
-            key: const Key('kyokuSelector'),
-            value: kyoku,
-            items: List.generate(
-              4,
-              (index) => DropdownMenuItem(
-                value: index + 1,
-                child: Text('${index + 1}局'),
-              ),
-            ),
-            onChanged: enabled
-                ? (value) {
-                    if (value != null) onKyokuChanged(value);
-                  }
-                : null,
-          ),
-          DropdownButton<int>(
-            key: const Key('turnSelector'),
-            value: turn,
-            items: List.generate(
-              18,
-              (index) => DropdownMenuItem(
-                value: index + 1,
-                child: Text('${index + 1}巡目'),
-              ),
-            ),
-            onChanged: enabled
-                ? (value) {
-                    if (value != null) onTurnChanged(value);
-                  }
-                : null,
-          ),
-        ],
-      ),
-    ],
-  );
-}
-
-/// 一つの手牌または河を表示する領域です。
-class _TileArea extends StatelessWidget {
-  /// 表示領域を生成します。
-  const _TileArea({
+/// 開始前の手牌または最初のドラを、入力対象として選べるカードです。
+class _SetupTargetCard extends StatelessWidget {
+  /// 入力領域と選択状態を受け取ってカードを生成します。
+  const _SetupTargetCard({
     super.key,
     required this.label,
-    required this.tiles,
     required this.selected,
-    required this.onRemove,
+    required this.countLabel,
+    required this.onTap,
+    required this.child,
   });
 
+  /// 入力領域の名称です。
   final String label;
-  final List<Tile> tiles;
+
+  /// 現在牌パレットの入力先かどうかです。
   final bool selected;
-  final ValueChanged<int> onRemove;
+
+  /// 現在枚数と上限の表示です。
+  final String countLabel;
+
+  /// 入力対象へ切り替える処理です。
+  final VoidCallback onTap;
+
+  /// カード内に表示する牌一覧です。
+  final Widget child;
 
   @override
   Widget build(BuildContext context) => Card(
-    color: selected ? Theme.of(context).colorScheme.secondaryContainer : null,
-    child: Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: tiles.isEmpty
-                ? const [Text('牌をタップして追加')]
-                : List.generate(
-                    tiles.length,
-                    (index) => _TileButton(
-                      tile: tiles[index],
-                      onTap: () => onRemove(index),
+    color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (selected)
+                  Text(
+                    '入力中',
+                    key: Key(
+                      'setupActive-${label == '自分の手牌' ? 'hand' : 'doraIndicators'}',
+                    ),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-          ),
-        ],
+                const SizedBox(width: 8),
+                Text(countLabel),
+              ],
+            ),
+            const SizedBox(height: 4),
+            child,
+          ],
+        ),
       ),
     ),
+  );
+}
+
+/// 開始前カード内で入力済みの牌を直接訂正できる一覧です。
+class _SetupTileStrip extends StatelessWidget {
+  /// 表示する牌と削除処理を受け取って一覧を生成します。
+  const _SetupTileStrip({
+    super.key,
+    required this.tiles,
+    required this.tileKeyPrefix,
+    required this.onRemove,
+  });
+
+  /// 表示する入力済みの牌です。
+  final List<Tile> tiles;
+
+  /// 牌を一意に識別するキーの接頭辞です。
+  final String tileKeyPrefix;
+
+  /// タップした牌を削除する処理です。
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 4,
+    runSpacing: 4,
+    children: tiles.isEmpty
+        ? const [Text('牌をタップして追加')]
+        : List.generate(
+            tiles.length,
+            (index) => _TileButton(
+              key: Key('$tileKeyPrefix-$index'),
+              tile: tiles[index],
+              onTap: () => onRemove(index),
+            ),
+          ),
   );
 }
 
@@ -1412,14 +1423,14 @@ String _targetLabel(InputTarget target) => switch (target) {
   InputTarget.doraIndicators => 'ドラ表示牌',
 };
 
-/// 入力先タブに表示する短い名前を返します。
-String _targetTabLabel(InputTarget target) => switch (target) {
-  InputTarget.hand => '手牌',
-  InputTarget.ownRiver => '自分',
-  InputTarget.upperRiver => '上家',
-  InputTarget.acrossRiver => '対面',
-  InputTarget.lowerRiver => '下家',
-  InputTarget.doraIndicators => 'ドラ',
+/// 開始を妨げている理由コードを画面表示用の日本語へ変換します。
+String _setupIssueMessage(SetupValidationIssue issue) => switch (issue) {
+  SetupValidationIssue.handEmpty => '自分の手牌を入力してください。',
+  SetupValidationIssue.doraMissing => '最初のドラ表示牌を1枚選んでください。',
+  SetupValidationIssue.tooManyInitialDora => '開始前のドラ表示牌は1枚にしてください。',
+  SetupValidationIssue.handLimitExceeded => '親・子に応じた手牌の最大枚数を超えています。',
+  SetupValidationIssue.matchFinished => '新しい対局を開始してください。',
+  SetupValidationIssue.invalidVisibleTileCount => '同じ牌は局面全体で4枚までです。',
 };
 
 /// 河の入力先に対応するプレイヤー名を返します。
