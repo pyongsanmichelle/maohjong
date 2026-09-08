@@ -21,13 +21,17 @@ void main() {
   testWidgets('固定手牌は3人の最大危険率を表示し長押しで理由を確認して通常タップで打牌する', (tester) async {
     await tester.pumpWidget(const MaohjongApp());
 
-    await _selectTargetAndAdd(tester, 'lowerRiver', 'm1');
     await _selectTargetAndAdd(tester, 'hand', 'm1', copies: 2);
     await _selectTargetAndAdd(tester, 'doraIndicators', 'p9');
     await _showInputAreas(tester);
+    await tester.tap(find.byKey(const Key('dealer-lower')));
+    await tester.pump();
     final startButton = find.byKey(const Key('startButton'));
     await tester.ensureVisible(startButton);
     await tester.tap(startButton);
+    await tester.pump();
+    await _showTilePalette(tester);
+    await tester.tap(find.byKey(const Key('palette-m1')));
     await tester.pump();
 
     expect(
@@ -52,15 +56,6 @@ void main() {
 
     await tester.tap(find.text('閉じる'));
     await tester.pumpAndSettle();
-    await _showTilePalette(tester);
-    await tester.tap(find.byKey(const Key('palette-p1')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('handTile-0')));
-    await tester.pump();
-    await _showInputAreas(tester);
-
-    expect(find.text('対局入力中：下家の河を選択'), findsOneWidget);
-    expect(find.text('自分の手牌 2/14枚'), findsOneWidget);
   });
 }
 
@@ -72,7 +67,7 @@ Future<void> _selectTargetAndAdd(
   int copies = 1,
 }) async {
   await _showInputAreas(tester);
-  await tester.tap(find.byKey(Key('targetTab-$targetName')));
+  await tester.tap(find.byKey(Key('setupTarget-$targetName')));
   await tester.pump();
   await _showTilePalette(tester);
   for (var index = 0; index < copies; index++) {

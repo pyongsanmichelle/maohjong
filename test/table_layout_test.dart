@@ -12,7 +12,6 @@ void main() {
 
     await tester.tap(find.byKey(const Key('dealer-upper')));
     await tester.pump();
-    await _selectTargetAndAdd(tester, 'upperRiver', 'm1');
     await _selectTargetAndAdd(tester, 'doraIndicators', 'p9');
     await _selectTargetAndAdd(tester, 'hand', 'm2');
 
@@ -69,7 +68,7 @@ void main() {
     expect(own.center.dx, closeTo(board.center.dx, 2));
 
     final tableTileWidth = tester
-        .getSize(find.byKey(const Key('tableTile-upperRiver-0')))
+        .getSize(find.byKey(const Key('tableTile-doraIndicators-0')))
         .width;
     final paletteTileWidth = tester
         .getSize(find.byKey(const Key('palette-m1')))
@@ -78,7 +77,7 @@ void main() {
   });
 }
 
-/// 開始前のタブを選び、指定した牌を1枚追加します。
+/// 開始前の手牌またはドラ領域を選び、指定した牌を1枚追加します。
 Future<void> _selectTargetAndAdd(
   WidgetTester tester,
   String targetName,
@@ -86,9 +85,9 @@ Future<void> _selectTargetAndAdd(
 ) async {
   await tester.drag(_verticalScrollable(), const Offset(0, 1000));
   await tester.pumpAndSettle();
-  final tab = find.byKey(Key('targetTab-$targetName'));
-  await tester.ensureVisible(tab);
-  await tester.tap(tab);
+  final target = find.byKey(Key('setupTarget-$targetName'));
+  await tester.ensureVisible(target);
+  await tester.tap(target);
   await tester.pump();
   await tester.scrollUntilVisible(
     find.byKey(const Key('palette-red')),

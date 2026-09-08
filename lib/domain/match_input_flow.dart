@@ -1,5 +1,6 @@
 import 'game_situation.dart';
 import 'meld.dart';
+import 'match_setup_validation.dart';
 import 'round_progress.dart';
 import 'round_result.dart';
 import 'round_action_history.dart';
@@ -77,11 +78,15 @@ class MatchInputFlow {
   bool get canOwnDiscard =>
       started && currentRiver == InputTarget.ownRiver && !_turnNeedsDraw;
 
-  /// 親・ドラ表示牌・手牌が揃い、開始可能かどうかを返します。
-  bool get canStart =>
-      !progress.matchFinished &&
-      situation.doraIndicators.isNotEmpty &&
-      situation.hand.isNotEmpty;
+  /// 現在の開始前入力を検証した結果です。
+  MatchSetupValidation get setupValidation => MatchSetupValidator.validate(
+    situation: situation,
+    dealer: dealer,
+    matchFinished: progress.matchFinished,
+  );
+
+  /// 親・最初のドラ・手牌が揃い、開始可能かどうかを返します。
+  bool get canStart => setupValidation.canStart;
 
   /// 手牌上限を超えない場合に親を変更します。
   bool selectDealer(SeatPosition value) {
@@ -137,6 +142,20 @@ class MatchInputFlow {
     _turnNeedsDraw = false;
     _discardHistory.clear();
     actionHistory.clearForNextRound();
+  }
+
+  /// 局面と進行履歴を破棄し、新しい半荘を東1局から準備します。
+  void resetForNewMatch() {
+    situation.clearForNextRound();
+    progress.resetForNewMatch();
+    actionHistory.clearForNextRound();
+    dealer = SeatPosition.self;
+    started = false;
+    currentRiver = InputTarget.ownRiver;
+    lastDiscard = null;
+    lastRoundResult = null;
+    _turnNeedsDraw = false;
+    _discardHistory.clear();
   }
 
   /// 打牌順に次の河へ進めます。

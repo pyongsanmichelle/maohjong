@@ -3,16 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maohjong/main.dart';
 
 void main() {
-  testWidgets('開始前に既存のカンを登録して訂正できる', (tester) async {
+  testWidgets('開始後に既存のカンを局面補正として登録して訂正できる', (tester) async {
     await tester.pumpWidget(const MaohjongApp());
+    await _addTile(tester, 'm1');
+    await _showInputAreas(tester);
+    await tester.tap(find.byKey(const Key('setupTarget-doraIndicators')));
+    await tester.pump();
+    await _addTile(tester, 'p9');
+    await _showInputAreas(tester);
+    await tester.tap(find.byKey(const Key('startButton')));
+    await tester.pumpAndSettle();
 
-    final setupKanButton = find.byKey(const Key('setupKanButton'));
-    await tester.scrollUntilVisible(
-      setupKanButton,
-      300,
-      scrollable: _verticalScrollable(),
-    );
-    await tester.tap(setupKanButton);
+    final correctionButton = find.byKey(const Key('kanCorrectionButton'));
+    await tester.tap(correctionButton);
     await tester.pumpAndSettle();
 
     expect(find.text('開始時点のカンを登録'), findsOneWidget);
@@ -21,12 +24,12 @@ void main() {
 
     expect(find.byKey(const Key('meld-ownRiver-0')), findsOneWidget);
     expect(find.textContaining('暗槓'), findsOneWidget);
-    expect(find.text('手牌 0/11枚'), findsOneWidget);
+    expect(find.text('自分の手牌 1/11枚'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('meld-ownRiver-0')));
     await tester.pump();
     expect(find.byKey(const Key('meld-ownRiver-0')), findsNothing);
-    expect(find.text('手牌 0/14枚'), findsOneWidget);
+    expect(find.text('自分の手牌 1/14枚'), findsOneWidget);
   });
 
   testWidgets('自分の番に暗槓すると嶺上牌入力まで打牌できない', (tester) async {
@@ -48,7 +51,7 @@ void main() {
       await _addTile(tester, tile);
     }
     await _showInputAreas(tester);
-    await tester.tap(find.byKey(const Key('targetTab-doraIndicators')));
+    await tester.tap(find.byKey(const Key('setupTarget-doraIndicators')));
     await tester.pump();
     await _addTile(tester, 'p9');
 
@@ -98,7 +101,7 @@ Future<void> _addTile(
   if (find.byKey(const Key('startedTableLayout')).evaluate().isNotEmpty) {
     await tester.scrollUntilVisible(
       find.byKey(Key('palette-$tileName')),
-      60,
+      100,
       scrollable: _startedPaletteScrollable(),
     );
   } else {

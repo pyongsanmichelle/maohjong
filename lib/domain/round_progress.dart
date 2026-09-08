@@ -51,6 +51,16 @@ class RoundProgress {
   /// 半荘の南4局まで終了したかどうかです。
   bool matchFinished = false;
 
+  /// 新しい半荘を東1局・1巡目から開始できる状態へ初期化します。
+  void resetForNewMatch() {
+    roundWind = RoundWind.east;
+    kyoku = 1;
+    turn = 1;
+    remainingDraws = initialDraws;
+    _discardsInTurn = 0;
+    matchFinished = false;
+  }
+
   /// 開始前に場風を選択し、終了状態を解除します。
   void selectRoundWind(RoundWind value) {
     roundWind = value;

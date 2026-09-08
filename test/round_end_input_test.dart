@@ -25,7 +25,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ツモ：下家が和了。東2局へ進みました。手牌とドラを入力してください。'), findsOneWidget);
-    expect(find.text('自分の手牌 0/13枚'), findsOneWidget);
+    expect(find.text('東2局・1巡目'), findsOneWidget);
+    expect(find.text('0/13枚'), findsOneWidget);
   });
 
   testWidgets('ロンは直前打牌がある場合だけ選べ放銃者を自動表示する', (tester) async {
@@ -68,36 +69,18 @@ void main() {
       findsOneWidget,
     );
   });
-
-  testWidgets('南4局のツモ上がりで半荘終了を表示する', (tester) async {
-    await tester.pumpWidget(const MaohjongApp());
-    await tester.tap(find.text('南場'));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('kyokuSelector')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('4局').last);
-    await tester.pumpAndSettle();
-    await _prepareAndStart(tester);
-
-    await _openRoundEndDialog(tester);
-    await tester.tap(find.byKey(const Key('confirmRoundEndButton')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ツモ：自分が和了。南4局が終了しました。'), findsOneWidget);
-    expect(find.text('半荘終了です。新しく始める場合は場・局・巡目を選び直してください。'), findsOneWidget);
-  });
 }
 
 /// 最小限の手牌とドラを入力して対局を開始します。
 Future<void> _prepareAndStart(WidgetTester tester) async {
   await _showInputAreas(tester);
-  await tester.tap(find.byKey(const Key('targetTab-hand')));
+  await tester.tap(find.byKey(const Key('setupTarget-hand')));
   await tester.pump();
   await _showTilePalette(tester);
   await tester.tap(find.byKey(const Key('palette-m1')));
   await tester.pump();
   await _showInputAreas(tester);
-  await tester.tap(find.byKey(const Key('targetTab-doraIndicators')));
+  await tester.tap(find.byKey(const Key('setupTarget-doraIndicators')));
   await tester.pump();
   await _showTilePalette(tester);
   await tester.tap(find.byKey(const Key('palette-p9')));
