@@ -12,6 +12,7 @@ import 'presentation/danger_analysis_page.dart';
 import 'presentation/discard_metadata_editor.dart';
 import 'presentation/hand_danger_presentation.dart';
 import 'presentation/kan_dialog.dart';
+import 'presentation/match_action_bar.dart';
 import 'presentation/round_end_dialog.dart';
 import 'presentation/started_table_layout.dart';
 import 'presentation/tile_presentation.dart';
@@ -78,6 +79,11 @@ class _SituationInputPageState extends State<SituationInputPage> {
     bool declaresRiichi = false,
   }) {
     final target = _isOwnDiscardTurn ? InputTarget.hand : _visibleTarget;
+    if (_flow.started && _flow.kanDoraPending) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('先にカンドラ表示牌を選択してください。')));
+      return;
+    }
     if (!_flow.started &&
         target == InputTarget.doraIndicators &&
         _editor.situation.doraIndicators.isNotEmpty) {
@@ -219,9 +225,17 @@ class _SituationInputPageState extends State<SituationInputPage> {
       ).showSnackBar(const SnackBar(content: Text('副露に必要な牌または残り枚数が不足しています。')));
       return;
     }
-    setState(
-      () => _flow.acceptCall(selection.type, selection.callerRiver, meld: meld),
-    );
+    var accepted = false;
+    setState(() {
+      accepted = _flow.acceptCall(
+        selection.type,
+        selection.callerRiver,
+        meld: meld,
+      );
+    });
+    if (accepted && selection.type == MeldType.kan) {
+      await _showDoraIndicatorPicker(requiredByKan: true);
+    }
   }
 
   /// 開始時点ですでに成立しているカンを登録します。
@@ -252,33 +266,44 @@ class _SituationInputPageState extends State<SituationInputPage> {
       );
       return;
     }
-    setState(() {});
+    setState(() => _flow.requireKanDoraIndicator());
+    await _showDoraIndicatorPicker(requiredByKan: true);
   }
 
-  /// 開始後の手番を変えずに、追加のドラ表示牌を1枚選びます。
-  Future<void> _showDoraIndicatorPicker() async {
+  /// 追加ドラを選び、カン後の場合は嶺上牌より先に入力を確定します。
+  Future<void> _showDoraIndicatorPicker({bool requiredByKan = false}) async {
     final tile = await showModalBottomSheet<Tile>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '追加するドラ表示牌',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                _TilePalette(
-                  onTap: (tile) => Navigator.pop(context, tile),
-                  remainingCopies: _editor.remainingCopies,
-                  compact: true,
-                ),
-              ],
+      isDismissible: !requiredByKan,
+      enableDrag: !requiredByKan,
+      builder: (context) => PopScope(
+        canPop: !requiredByKan,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    requiredByKan ? 'カンドラ表示牌を選択' : '追加するドラ表示牌',
+                    key: requiredByKan ? const Key('kanDoraPickerTitle') : null,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  if (requiredByKan) ...[
+                    const SizedBox(height: 4),
+                    const Text('嶺上牌を入力する前に、新しい表示牌を1枚選んでください。'),
+                  ],
+                  const SizedBox(height: 8),
+                  _TilePalette(
+                    onTap: (tile) => Navigator.pop(context, tile),
+                    remainingCopies: _editor.remainingCopies,
+                    compact: true,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -290,7 +315,9 @@ class _SituationInputPageState extends State<SituationInputPage> {
           .showSnackBar(const SnackBar(content: Text('同じ牌は4枚までです。')));
       return;
     }
-    setState(() {});
+    setState(() {
+      if (requiredByKan) _flow.confirmKanDoraIndicator();
+    });
   }
 
   /// 自分の打牌可能な番に暗槓または加槓を確定します。
@@ -310,7 +337,13 @@ class _SituationInputPageState extends State<SituationInputPage> {
       );
       return;
     }
-    setState(() => _flow.acceptSelfKan(meld: meld));
+    var accepted = false;
+    setState(() {
+      accepted = _flow.acceptSelfKan(meld: meld);
+    });
+    if (accepted) {
+      await _showDoraIndicatorPicker(requiredByKan: true);
+    }
   }
 
   /// 副露を取り消して、鳴かれた打牌と通常の手番を復元します。
@@ -322,6 +355,13 @@ class _SituationInputPageState extends State<SituationInputPage> {
     }
     setState(() {
       if (!_editor.removeMeld(meld)) return;
+      if (meld.type == MeldType.kan &&
+          _editor.situation.doraIndicators.length > 1) {
+        _editor.removeAt(
+          InputTarget.doraIndicators,
+          _editor.situation.doraIndicators.length - 1,
+        );
+      }
       switch (meld.origin) {
         case MeldOrigin.call:
           final fromRiver = meld.fromRiver;
@@ -506,7 +546,7 @@ class _SituationInputPageState extends State<SituationInputPage> {
             onRemove: (index) => _remove(InputTarget.doraIndicators, index),
           ),
         ),
-        _buildActionControls(),
+        _buildSetupActions(),
         if (!validation.canStart)
           Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -554,7 +594,22 @@ class _SituationInputPageState extends State<SituationInputPage> {
             const SizedBox(height: 4),
             _buildMatchInputStatus(),
             const SizedBox(height: 4),
-            _buildActionControls(),
+            MatchActionBar(
+              canUndo: _editor.canUndo,
+              showCall: _flow.lastDiscard != null,
+              showSelfKan:
+                  _isOwnDiscardTurn &&
+                  _flow.canOwnDiscard &&
+                  _editor.selfKanOptions.isNotEmpty,
+              onUndo: _undo,
+              onCall: _showCallDialog,
+              onSelfKan: _showSelfKanDialog,
+              onRoundEnd: _showRoundEndDialog,
+              onCorrectSituation: _showSetupKanDialog,
+              onAddDora: _showDoraIndicatorPicker,
+              onOpenAnalysis: _openDangerAnalysis,
+              onReturnToSetup: _returnToSetup,
+            ),
             const SizedBox(height: 4),
             Expanded(
               child: Container(
@@ -609,7 +664,9 @@ class _SituationInputPageState extends State<SituationInputPage> {
       borderRadius: BorderRadius.circular(6),
     ),
     child: Text(
-      _isOwnDiscardTurn
+      _flow.kanDoraPending
+          ? '対局入力中：カンドラ表示牌を選択'
+          : _isOwnDiscardTurn
           ? _flow.ownDrawRequired
                 ? '対局入力中：ツモ牌を選択'
                 : '対局入力中：手牌から自分の打牌を選択'
@@ -620,86 +677,20 @@ class _SituationInputPageState extends State<SituationInputPage> {
     ),
   );
 
-  /// 入力段階に応じた操作ボタンと次の操作案内を表示します。
-  Widget _buildActionControls() => Wrap(
-    key: _flow.started ? const Key('matchActionBar') : null,
+  /// 開始前の開始操作と現在の手牌枚数を表示します。
+  Widget _buildSetupActions() => Wrap(
     spacing: 8,
     runSpacing: 6,
     crossAxisAlignment: WrapCrossAlignment.center,
     children: [
-      if (_flow.started)
-        OutlinedButton.icon(
-          key: const Key('undoButton'),
-          onPressed: _editor.canUndo ? _undo : null,
-          icon: const Icon(Icons.undo),
-          label: const Text('取り消し'),
-        ),
-      if (_flow.started && _flow.lastDiscard != null)
-        FilledButton.tonalIcon(
-          key: const Key('callButton'),
-          onPressed: _showCallDialog,
-          icon: const Icon(Icons.call_split),
-          label: const Text('チー・ポン・カン'),
-        ),
-      if (_flow.started)
-        OutlinedButton.icon(
-          key: const Key('kanCorrectionButton'),
-          onPressed: _showSetupKanDialog,
-          icon: const Icon(Icons.view_module_outlined),
-          label: const Text('局面補正'),
-        ),
-      if (_flow.started)
-        OutlinedButton.icon(
-          key: const Key('addDoraButton'),
-          onPressed: _showDoraIndicatorPicker,
-          icon: const Icon(Icons.add_box_outlined),
-          label: const Text('ドラ追加'),
-        ),
-      if (_isOwnDiscardTurn &&
-          _flow.canOwnDiscard &&
-          _editor.selfKanOptions.isNotEmpty)
-        FilledButton.tonalIcon(
-          key: const Key('selfKanButton'),
-          onPressed: _showSelfKanDialog,
-          icon: const Icon(Icons.view_module),
-          label: const Text('カン'),
-        ),
-      if (_flow.started)
-        FilledButton.tonalIcon(
-          key: const Key('roundEndButton'),
-          onPressed: _showRoundEndDialog,
-          icon: const Icon(Icons.sports_score),
-          label: const Text('局終了'),
-        ),
-      if (_flow.started)
-        OutlinedButton.icon(
-          key: const Key('dangerAnalysisButton'),
-          onPressed: _openDangerAnalysis,
-          icon: const Icon(Icons.shield_outlined),
-          label: const Text('相手分析'),
-        ),
-      if (!_flow.started)
-        FilledButton.icon(
-          key: const Key('startButton'),
-          onPressed: _flow.canStart ? _start : null,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('開始'),
-        )
-      else
-        OutlinedButton.icon(
-          key: const Key('returnToSetupButton'),
-          onPressed: _returnToSetup,
-          icon: const Icon(Icons.settings),
-          label: const Text('設定に戻る'),
-        ),
+      FilledButton.icon(
+        key: const Key('startButton'),
+        onPressed: _flow.canStart ? _start : null,
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('開始'),
+      ),
       Text(
-        _flow.started
-            ? _isOwnDiscardTurn
-                  ? _flow.ownDrawRequired
-                        ? '下の牌パレットからツモ牌を1枚選択'
-                        : 'ツモ済み：手牌をタップして打牌'
-                  : '次: ${_targetLabel(_flow.currentRiver)}'
-            : '手牌 ${_editor.situation.hand.length}/${_flow.handLimit}枚',
+        '手牌 ${_editor.situation.hand.length}/${_flow.handLimit}枚',
         key: const Key('inputGuide'),
       ),
     ],
@@ -798,20 +789,27 @@ class _PersistentHand extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(
-                  '自分の手牌 ${tiles.length}/$limit枚',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    '自分の手牌 ${tiles.length}/$limit枚',
+                    maxLines: 2,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
-                const Spacer(),
-                Text(
-                  isOwnDiscardTurn
-                      ? ownDrawRequired
-                            ? '先にツモ牌を選択'
-                            : 'タップして打牌'
-                      : started
-                      ? '相手の打牌を入力中'
-                      : 'タップして削除',
-                  style: Theme.of(context).textTheme.labelMedium,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    isOwnDiscardTurn
+                        ? ownDrawRequired
+                              ? '先にツモ牌を選択'
+                              : 'タップして打牌'
+                        : started
+                        ? '相手の打牌を入力中'
+                        : 'タップして削除',
+                    maxLines: 2,
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
                 ),
               ],
             ),
@@ -1010,6 +1008,11 @@ class _CallDialogState extends State<_CallDialog> {
     _sequence = type == MeldType.chi ? sequences.firstOrNull : null;
   });
 
+  /// 画面上に並ぶ候補から鳴いた人を直接選択します。
+  void _selectCaller(InputTarget river) => setState(() {
+    _callerRiver = river;
+  });
+
   @override
   Widget build(BuildContext context) {
     final callers = widget.flow.callersFor(_type);
@@ -1036,23 +1039,21 @@ class _CallDialogState extends State<_CallDialog> {
             ),
             const SizedBox(height: 12),
             const Text('鳴いた人'),
-            DropdownButton<InputTarget>(
+            const SizedBox(height: 4),
+            Wrap(
               key: const Key('callPlayerSelector'),
-              value: _callerRiver,
-              isExpanded: true,
-              items: callers
+              spacing: 6,
+              runSpacing: 6,
+              children: callers
                   .map(
-                    (river) => DropdownMenuItem(
-                      value: river,
-                      child: Text(_riverOwnerLabel(river)),
+                    (river) => ChoiceChip(
+                      key: Key('callPlayer-${river.name}'),
+                      label: Text(_riverOwnerLabel(river)),
+                      selected: _callerRiver == river,
+                      onSelected: (_) => _selectCaller(river),
                     ),
                   )
                   .toList(),
-              onChanged: _type == MeldType.chi
-                  ? null
-                  : (value) {
-                      if (value != null) setState(() => _callerRiver = value);
-                    },
             ),
             if (_type == MeldType.chi) ...[
               const SizedBox(height: 8),
@@ -1375,37 +1376,55 @@ class _TileButton extends StatelessWidget {
             border: Border.all(color: const Color(0xff5b5b5b)),
             borderRadius: BorderRadius.circular(5),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  tileLabel(tile),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: fitWidth != null && fitWidth! < 30 ? 11 : null,
-                    color: isEnabled ? tileColor(tile) : Colors.grey.shade600,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      tileLabel(tile),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: fitWidth != null && fitWidth! < 30
+                            ? 11
+                            : null,
+                        color: isEnabled
+                            ? tileColor(tile)
+                            : Colors.grey.shade600,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              if (isPaletteTile)
-                Text(
-                  '残$remainingCopies',
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              if (dangerScore != null)
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '$dangerScore%',
-                    key: dangerScoreKey,
-                    maxLines: 1,
-                    style: Theme.of(context).textTheme.labelSmall
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                if (isPaletteTile)
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '残$remainingCopies',
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ),
                   ),
-                ),
-            ],
+                if (dangerScore != null)
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '$dangerScore%',
+                        key: dangerScoreKey,
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

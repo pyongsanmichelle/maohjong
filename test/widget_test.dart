@@ -61,6 +61,8 @@ void main() {
     expect(find.byKey(const Key('startedTableLayout')), findsOneWidget);
     expect(find.text('対局入力中：下家の河を選択'), findsOneWidget);
     expect(find.byKey(const Key('undoButton')), findsOneWidget);
+    expect(find.byKey(const Key('matchMoreMenuButton')), findsOneWidget);
+    await _openMatchMoreMenu(tester);
     expect(find.byKey(const Key('kanCorrectionButton')), findsOneWidget);
     expect(find.byKey(const Key('addDoraButton')), findsOneWidget);
   });
@@ -69,6 +71,7 @@ void main() {
     await tester.pumpWidget(const MaohjongApp());
     await _prepareAndStart(tester);
 
+    await _openMatchMoreMenu(tester);
     await tester.tap(find.byKey(const Key('addDoraButton')));
     await tester.pumpAndSettle();
     final sheetPalette = find.descendant(
@@ -180,3 +183,9 @@ Finder _startedPaletteScrollable() => find.descendant(
   of: find.byKey(const Key('tilePalettePanel')),
   matching: find.byType(Scrollable),
 );
+
+/// 対局中のその他メニューを開きます。
+Future<void> _openMatchMoreMenu(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('matchMoreMenuButton')));
+  await tester.pumpAndSettle();
+}
