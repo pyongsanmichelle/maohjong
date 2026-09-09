@@ -155,6 +155,18 @@ class MatchInputFlow {
     actionHistory.clearForNextRound();
   }
 
+  /// 外部入力で置き換えた現在局の局面を、対局中の進行状態へ再同期します。
+  void reseedFromSituation() {
+    lastDiscard = null;
+    _kanDoraPending = false;
+    _discardHistory.clear();
+    _turnNeedsDraw =
+        started &&
+        currentRiver == InputTarget.ownRiver &&
+        situation.hand.length < activeHandLimit;
+    actionHistory.seedFromSituation(situation, turn: progress.turn);
+  }
+
   /// 局面と進行履歴を破棄し、新しい半荘を東1局から準備します。
   void resetForNewMatch() {
     situation.clearForNextRound();

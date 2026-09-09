@@ -16,6 +16,7 @@ class MatchActionBar extends StatelessWidget {
     required this.onAddDora,
     required this.onOpenAnalysis,
     required this.onReturnToSetup,
+    this.onImportImage,
   });
 
   /// Materialの最小タップ領域を満たす固定バー高です。
@@ -53,6 +54,9 @@ class MatchActionBar extends StatelessWidget {
 
   /// 入力済み局面を保持して準備画面へ戻る処理です。
   final VoidCallback onReturnToSetup;
+
+  /// 静止画から局面を補正する処理です。未対応時はメニューに表示しません。
+  final VoidCallback? onImportImage;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -100,6 +104,7 @@ class MatchActionBar extends StatelessWidget {
             onAddDora: onAddDora,
             onOpenAnalysis: onOpenAnalysis,
             onReturnToSetup: onReturnToSetup,
+            onImportImage: onImportImage,
           ),
         ],
       ),
@@ -149,7 +154,13 @@ class _MatchToolbarButton extends StatelessWidget {
 }
 
 /// その他メニューで識別する補助操作です。
-enum _MatchMoreAction { correctSituation, addDora, openAnalysis, returnToSetup }
+enum _MatchMoreAction {
+  correctSituation,
+  addDora,
+  importImage,
+  openAnalysis,
+  returnToSetup,
+}
 
 /// 利用頻度の低い対局操作を、文字付きメニューとして提供します。
 class _MatchMoreMenu extends StatelessWidget {
@@ -159,6 +170,7 @@ class _MatchMoreMenu extends StatelessWidget {
     required this.onAddDora,
     required this.onOpenAnalysis,
     required this.onReturnToSetup,
+    required this.onImportImage,
   });
 
   /// 局面補正を開始する処理です。
@@ -173,6 +185,9 @@ class _MatchMoreMenu extends StatelessWidget {
   /// 準備画面へ戻る処理です。
   final VoidCallback onReturnToSetup;
 
+  /// 静止画入力を開始する処理です。
+  final VoidCallback? onImportImage;
+
   /// 選択した項目に対応する既存処理を呼び出します。
   void _select(_MatchMoreAction action) {
     switch (action) {
@@ -180,6 +195,8 @@ class _MatchMoreMenu extends StatelessWidget {
         onCorrectSituation();
       case _MatchMoreAction.addDora:
         onAddDora();
+      case _MatchMoreAction.importImage:
+        onImportImage?.call();
       case _MatchMoreAction.openAnalysis:
         onOpenAnalysis();
       case _MatchMoreAction.returnToSetup:
@@ -198,8 +215,8 @@ class _MatchMoreMenu extends StatelessWidget {
         tooltip: 'その他の対局操作',
         icon: const Icon(Icons.more_vert),
         onSelected: _select,
-        itemBuilder: (context) => const [
-          PopupMenuItem(
+        itemBuilder: (context) => [
+          const PopupMenuItem(
             key: Key('kanCorrectionButton'),
             value: _MatchMoreAction.correctSituation,
             child: _MatchMenuLabel(
@@ -207,18 +224,27 @@ class _MatchMoreMenu extends StatelessWidget {
               label: '局面補正',
             ),
           ),
-          PopupMenuItem(
+          const PopupMenuItem(
             key: Key('addDoraButton'),
             value: _MatchMoreAction.addDora,
             child: _MatchMenuLabel(icon: Icons.add_box_outlined, label: 'ドラ追加'),
           ),
-          PopupMenuItem(
+          if (onImportImage != null)
+            const PopupMenuItem(
+              key: Key('staticImageInputMenuButton'),
+              value: _MatchMoreAction.importImage,
+              child: _MatchMenuLabel(
+                icon: Icons.add_a_photo_outlined,
+                label: '画像から局面入力',
+              ),
+            ),
+          const PopupMenuItem(
             key: Key('dangerAnalysisButton'),
             value: _MatchMoreAction.openAnalysis,
             child: _MatchMenuLabel(icon: Icons.shield_outlined, label: '相手分析'),
           ),
-          PopupMenuDivider(),
-          PopupMenuItem(
+          const PopupMenuDivider(),
+          const PopupMenuItem(
             key: Key('returnToSetupButton'),
             value: _MatchMoreAction.returnToSetup,
             child: _MatchMenuLabel(icon: Icons.settings, label: '設定に戻る'),
