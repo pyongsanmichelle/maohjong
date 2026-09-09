@@ -203,3 +203,4 @@ infrastructure
 - [対戦相手の狙い役・待ち牌推定 基本設計書](opponent_intent_analysis_design.md)
 - [対局開始後レイアウト 基本設計書](table_layout_design.md)
 - [対局開始前画面の簡略化 基本設計書](setup_screen_simplification_design.md)
+- [対局中コンパクトアクションバー 基本設計書](compact_match_action_bar_design.md)

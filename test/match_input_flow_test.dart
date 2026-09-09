@@ -113,8 +113,14 @@ void main() {
 
     flow.recordDiscard(InputTarget.upperRiver, Tile.p5);
     expect(flow.acceptCall(MeldType.kan, InputTarget.ownRiver), isTrue);
+    expect(flow.kanDoraPending, isTrue);
     expect(flow.ownDrawRequired, isTrue);
     expect(flow.canOwnDiscard, isFalse);
+    expect(flow.markOwnDrawn(), isFalse);
+    expect(flow.confirmKanDoraIndicator(), isTrue);
+    expect(flow.kanDoraPending, isFalse);
+    expect(flow.markOwnDrawn(), isTrue);
+    expect(flow.canOwnDiscard, isTrue);
   });
 
   test('自分の副露数に応じて開始前と開始後の手牌上限を減らす', () {
@@ -150,9 +156,13 @@ void main() {
     expect(flow.start(), isTrue);
     expect(flow.canOwnDiscard, isTrue);
     expect(flow.acceptSelfKan(), isTrue);
+    expect(flow.kanDoraPending, isTrue);
     expect(flow.ownDrawRequired, isTrue);
     expect(flow.canOwnDiscard, isFalse);
+    expect(flow.markOwnDrawn(), isFalse);
+    expect(flow.confirmKanDoraIndicator(), isTrue);
     expect(flow.cancelSelfKan(), isTrue);
+    expect(flow.kanDoraPending, isFalse);
     expect(flow.canOwnDiscard, isTrue);
   });
 

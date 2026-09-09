@@ -38,9 +38,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await _showInputAreas(tester);
-    final analysisButton = find.byKey(const Key('dangerAnalysisButton'));
-    await tester.ensureVisible(analysisButton);
-    await tester.tap(analysisButton);
+    await _openMatchMoreMenu(tester);
+    await tester.tap(find.byKey(const Key('dangerAnalysisButton')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下家'));
     await tester.tap(find.text('狙い役・待ち'));
@@ -97,3 +96,9 @@ Finder _startedPaletteScrollable() => find.descendant(
   of: find.byKey(const Key('tilePalettePanel')),
   matching: find.byType(Scrollable),
 );
+
+/// 対局中のその他メニューを開きます。
+Future<void> _openMatchMoreMenu(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('matchMoreMenuButton')));
+  await tester.pumpAndSettle();
+}

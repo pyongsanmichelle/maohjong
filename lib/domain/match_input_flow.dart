@@ -60,6 +60,9 @@ class MatchInputFlow {
   /// 自分が打牌する前にツモ入力を必要としているかどうかです。
   bool _turnNeedsDraw = false;
 
+  /// カン成立後に新しいドラ表示牌の入力を待っているかどうかです。
+  bool _kanDoraPending = false;
+
   /// 打牌取り消し時に局進行も戻すための履歴です。
   final List<_FlowDiscardAction> _discardHistory = [];
 
@@ -76,7 +79,13 @@ class MatchInputFlow {
 
   /// 自分の手牌から打牌できる状態かどうかを返します。
   bool get canOwnDiscard =>
-      started && currentRiver == InputTarget.ownRiver && !_turnNeedsDraw;
+      started &&
+      currentRiver == InputTarget.ownRiver &&
+      !_turnNeedsDraw &&
+      !_kanDoraPending;
+
+  /// カン成立後、嶺上牌より先にドラ表示牌を入力する必要があるかどうかです。
+  bool get kanDoraPending => started && _kanDoraPending;
 
   /// 現在の開始前入力を検証した結果です。
   MatchSetupValidation get setupValidation => MatchSetupValidator.validate(
@@ -102,6 +111,7 @@ class MatchInputFlow {
     started = true;
     currentRiver = _riverFor(dealer);
     lastDiscard = null;
+    _kanDoraPending = false;
     _turnNeedsDraw =
         currentRiver == InputTarget.ownRiver &&
         situation.hand.length < activeHandLimit;
@@ -139,6 +149,7 @@ class MatchInputFlow {
   void returnToSetup() {
     started = false;
     lastDiscard = null;
+    _kanDoraPending = false;
     _turnNeedsDraw = false;
     _discardHistory.clear();
     actionHistory.clearForNextRound();
@@ -154,6 +165,7 @@ class MatchInputFlow {
     currentRiver = InputTarget.ownRiver;
     lastDiscard = null;
     lastRoundResult = null;
+    _kanDoraPending = false;
     _turnNeedsDraw = false;
     _discardHistory.clear();
   }
@@ -171,6 +183,7 @@ class MatchInputFlow {
     DiscardSource source = DiscardSource.unknown,
     bool declaresRiichi = false,
   }) {
+    if (_kanDoraPending) return false;
     final progressBeforeDiscard = progress.snapshot();
     final neededDraw = _turnNeedsDraw;
     if (neededDraw && river != InputTarget.ownRiver) {
@@ -203,7 +216,7 @@ class MatchInputFlow {
 
   /// 自分のツモ牌が入力されたことを記録します。
   bool markOwnDrawn() {
-    if (!ownDrawRequired) return false;
+    if (!ownDrawRequired || _kanDoraPending) return false;
     if (!progress.recordDraw()) return false;
     _turnNeedsDraw = false;
     lastDiscard = null;
@@ -220,7 +233,9 @@ class MatchInputFlow {
 
   /// 鳴いた人へ次の打牌入力先を変更します。
   bool acceptCall(MeldType type, InputTarget callerRiver, {Meld? meld}) {
-    if (!callersFor(type).contains(callerRiver)) return false;
+    if (_kanDoraPending || !callersFor(type).contains(callerRiver)) {
+      return false;
+    }
     if (meld != null) {
       actionHistory.appendMeld(
         meld: meld,
@@ -230,15 +245,31 @@ class MatchInputFlow {
     currentRiver = callerRiver;
     lastDiscard = null;
     _turnNeedsDraw = type == MeldType.kan;
+    _kanDoraPending = type == MeldType.kan;
     return true;
   }
 
   /// 自分の番の暗槓・加槓を受け付け、嶺上牌の入力待ちにします。
   bool acceptSelfKan({Meld? meld}) {
-    if (!canOwnDiscard) return false;
+    if (!canOwnDiscard || _kanDoraPending) return false;
     if (meld != null) actionHistory.appendMeld(meld: meld);
     lastDiscard = null;
     _turnNeedsDraw = true;
+    _kanDoraPending = true;
+    return true;
+  }
+
+  /// 局面補正で登録したカンについて、ドラ表示牌の入力待ちを開始します。
+  bool requireKanDoraIndicator() {
+    if (!started || _kanDoraPending) return false;
+    _kanDoraPending = true;
+    return true;
+  }
+
+  /// 新しいドラ表示牌の入力を確定し、嶺上牌入力へ進める状態にします。
+  bool confirmKanDoraIndicator() {
+    if (!kanDoraPending) return false;
+    _kanDoraPending = false;
     return true;
   }
 
@@ -247,6 +278,7 @@ class MatchInputFlow {
     if (!ownDrawRequired) return false;
     if (meld != null) actionHistory.removeMeld(meld);
     _turnNeedsDraw = false;
+    _kanDoraPending = false;
     return true;
   }
 
@@ -257,6 +289,7 @@ class MatchInputFlow {
     lastDiscard = DiscardEvent(river, tile, actionId: discard?.id);
     currentRiver = nextRiver(river);
     _turnNeedsDraw = true;
+    _kanDoraPending = false;
   }
 
   /// 指定した鳴きで選べるプレイヤーの河を返します。
@@ -341,6 +374,7 @@ class MatchInputFlow {
     started = false;
     currentRiver = _riverFor(dealer);
     lastDiscard = null;
+    _kanDoraPending = false;
     _turnNeedsDraw = false;
     _discardHistory.clear();
     situation.clearForNextRound();

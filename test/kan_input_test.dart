@@ -14,21 +14,24 @@ void main() {
     await tester.tap(find.byKey(const Key('startButton')));
     await tester.pumpAndSettle();
 
-    final correctionButton = find.byKey(const Key('kanCorrectionButton'));
-    await tester.tap(correctionButton);
+    await _openMatchMoreMenu(tester);
+    await tester.tap(find.byKey(const Key('kanCorrectionButton')));
     await tester.pumpAndSettle();
 
     expect(find.text('開始時点のカンを登録'), findsOneWidget);
     await tester.tap(find.byKey(const Key('confirmSetupKanButton')));
     await tester.pumpAndSettle();
+    await _selectKanDora(tester, 's9');
 
     expect(find.byKey(const Key('meld-ownRiver-0')), findsOneWidget);
+    expect(find.byKey(const Key('tableTile-doraIndicators-1')), findsOneWidget);
     expect(find.textContaining('暗槓'), findsOneWidget);
     expect(find.text('自分の手牌 1/11枚'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('meld-ownRiver-0')));
     await tester.pump();
     expect(find.byKey(const Key('meld-ownRiver-0')), findsNothing);
+    expect(find.byKey(const Key('tableTile-doraIndicators-1')), findsNothing);
     expect(find.text('自分の手牌 1/14枚'), findsOneWidget);
   });
 
@@ -72,7 +75,12 @@ void main() {
     await tester.tap(find.byKey(const Key('selfKan-concealed-m1')));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('kanDoraPickerTitle')), findsOneWidget);
+    expect(find.textContaining('嶺上牌を入力する前'), findsOneWidget);
+    await _selectKanDora(tester, 's9');
+
     expect(find.textContaining('暗槓'), findsOneWidget);
+    expect(find.byKey(const Key('tableTile-doraIndicators-1')), findsOneWidget);
     await _showInputAreas(tester);
     expect(find.text('対局入力中：ツモ牌を選択'), findsOneWidget);
     expect(find.text('自分の手牌 10/11枚'), findsOneWidget);
@@ -144,3 +152,20 @@ Finder _startedPaletteScrollable() => find.descendant(
   of: find.byKey(const Key('tilePalettePanel')),
   matching: find.byType(Scrollable),
 );
+
+/// 対局中のその他メニューを開きます。
+Future<void> _openMatchMoreMenu(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('matchMoreMenuButton')));
+  await tester.pumpAndSettle();
+}
+
+/// カン直後の必須ドラ選択シートから表示牌を1枚選びます。
+Future<void> _selectKanDora(WidgetTester tester, String tileName) async {
+  final tile = find.descendant(
+    of: find.byType(BottomSheet),
+    matching: find.byKey(Key('palette-$tileName')),
+  );
+  await tester.ensureVisible(tile);
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
+}

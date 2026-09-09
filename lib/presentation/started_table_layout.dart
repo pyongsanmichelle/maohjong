@@ -85,7 +85,11 @@ class CompactRoundStatus extends StatelessWidget {
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(6),
     ),
-    child: Row(
+    child: Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 10,
+      runSpacing: 2,
       children: [
         Text(
           '${_roundWindLabel(progress.roundWind)}${progress.kyoku}局・'
@@ -93,13 +97,11 @@ class CompactRoundStatus extends StatelessWidget {
           style: Theme.of(context).textTheme.labelMedium
               ?.copyWith(fontWeight: FontWeight.bold),
         ),
-        const SizedBox(width: 10),
         Text(
           '親: ${_seatLabel(dealer)}',
           key: const Key('compactDealer'),
           style: Theme.of(context).textTheme.labelSmall,
         ),
-        const Spacer(),
         Text(
           '残りツモ ${progress.remainingDraws}回',
           style: Theme.of(context).textTheme.labelSmall,
