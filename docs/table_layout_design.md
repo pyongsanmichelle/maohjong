@@ -384,3 +384,4 @@ UIの再配置により既存のドメインテストを変更しない。既存
 ## 15. 関連設計書
 
 - [対局中コンパクトアクションバー 基本設計書](compact_match_action_bar_design.md)
+- [牌画像アセット 基本設計書](tile_image_assets_design.md)
