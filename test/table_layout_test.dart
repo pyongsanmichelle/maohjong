@@ -67,13 +67,15 @@ void main() {
     expect(own.top, greaterThan(upper.top));
     expect(own.center.dx, closeTo(board.center.dx, 2));
 
-    final tableTileWidth = tester
-        .getSize(find.byKey(const Key('tableTile-doraIndicators-0')))
-        .width;
+    final tableTileSize = tester.getSize(
+      find.byKey(const Key('tableTile-doraIndicators-0')),
+    );
+    final tableTileWidth = tableTileSize.width;
     final paletteTileWidth = tester
         .getSize(find.byKey(const Key('palette-m1')))
         .width;
     expect(tableTileWidth, lessThanOrEqualTo(paletteTileWidth * 0.55));
+    expect(tableTileSize.height / tableTileWidth, closeTo(4 / 3, 0.001));
   });
 }
 

@@ -10,6 +10,7 @@ import '../domain/round_progress.dart';
 import '../domain/round_result.dart';
 import 'discard_metadata_editor.dart';
 import 'intent_reason_formatter.dart';
+import 'mahjong_tile_face.dart';
 import 'tile_presentation.dart';
 
 /// 選択中の相手について狙い役、待ち牌、入力履歴を表示します。
@@ -261,15 +262,35 @@ class _WaitSection extends StatelessWidget {
               runSpacing: 8,
               children: [
                 for (final candidate in candidates)
-                  ActionChip(
-                    key: Key('wait-${candidate.tile.name}'),
-                    label: Text(
-                      '${tileLabel(candidate.tile)} ${candidate.score}/100 '
-                      '${formatter.confidenceLabel(intentLevelForScore(candidate.score))} '
-                      '残${candidate.remainingCopies}\n'
-                      '${candidate.possibleShapes.map(formatter.waitShapeLabel).join('・')}',
+                  Semantics(
+                    button: true,
+                    label:
+                        '${tileLabel(candidate.tile)}、${candidate.score}/100、'
+                        '${formatter.confidenceLabel(intentLevelForScore(candidate.score))}、'
+                        '残り${candidate.remainingCopies}枚',
+                    child: ExcludeSemantics(
+                      child: ActionChip(
+                        key: Key('wait-${candidate.tile.name}'),
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            MahjongTileFace(
+                              tile: candidate.tile,
+                              width: 28,
+                              height: 38,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${candidate.score}/100 '
+                              '${formatter.confidenceLabel(intentLevelForScore(candidate.score))} '
+                              '残${candidate.remainingCopies}\n'
+                              '${candidate.possibleShapes.map(formatter.waitShapeLabel).join('・')}',
+                            ),
+                          ],
+                        ),
+                        onPressed: () => onSelected(candidate),
+                      ),
                     ),
-                    onPressed: () => onSelected(candidate),
                   ),
               ],
             ),
@@ -300,6 +321,12 @@ class _DiscardHistorySection extends StatelessWidget {
             ListTile(
               key: Key('discardHistory-${action.id}'),
               contentPadding: EdgeInsets.zero,
+              leading: MahjongTileFace(
+                tile: action.tile,
+                width: 28,
+                height: 38,
+                excludeFromSemantics: false,
+              ),
               title: Text('${action.sequence}. ${tileLabel(action.tile)}'),
               subtitle: Text(
                 '${discardSourceLabel(action.source)}'

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../domain/meld.dart';
 import '../domain/situation_editor.dart';
 import '../domain/tile.dart';
+import 'mahjong_tile_face.dart';
 import 'tile_presentation.dart';
 
 /// 開始時点ですでに成立しているカンの入力内容です。
@@ -81,7 +82,14 @@ class _SetupKanDialogState extends State<SetupKanDialog> {
                 .map(
                   (tile) => DropdownMenuItem(
                     value: tile,
-                    child: Text(tileLabel(tile)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        MahjongTileFace(tile: tile, width: 24, height: 32),
+                        const SizedBox(width: 8),
+                        Text(tileLabel(tile)),
+                      ],
+                    ),
                   ),
                 )
                 .toList(),
@@ -143,8 +151,12 @@ class SelfKanDialog extends StatelessWidget {
         SimpleDialogOption(
           key: Key('selfKan-${option.type.name}-${option.tile.name}'),
           onPressed: () => Navigator.pop(context, option),
-          child: Text(
-            '${_kanTypeLabel(option.type)} ${tileLabel(option.tile)}',
+          child: Row(
+            children: [
+              MahjongTileFace(tile: option.tile, width: 28, height: 38),
+              const SizedBox(width: 10),
+              Text('${_kanTypeLabel(option.type)} ${tileLabel(option.tile)}'),
+            ],
           ),
         ),
       TextButton(

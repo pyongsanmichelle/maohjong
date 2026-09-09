@@ -41,11 +41,11 @@
 - 名称: `FluffyStuff/riichi-mahjong-tiles`
 - 配布元: https://github.com/FluffyStuff/riichi-mahjong-tiles
 - 使用セット: `Regular`
-- 形式: SVG
+- 形式: PNG
 - ライセンス: CC0 1.0 / Public Domain
 - ライセンス原文: https://github.com/FluffyStuff/riichi-mahjong-tiles/blob/master/LICENSE.md
 
-実装時は特定のコミットを指定して素材を取得し、そのコミットIDを`SOURCE.md`へ記録する。外部URLを実行時に参照せず、使用する34ファイルとライセンス文書をリポジトリへ同梱する。
+素材はコミット`26e127ba2117f45cdce5ea0225748cc0cfad3169`から取得し、そのコミットIDを`SOURCE.md`へ記録する。外部URLを実行時に参照せず、使用する34ファイルとライセンス文書をリポジトリへ同梱する。
 
 ### 4.2 配置
 
@@ -54,26 +54,26 @@ assets/
   images/
     mahjong_tiles/
       regular/
-        Man1.svg ... Man9.svg
-        Pin1.svg ... Pin9.svg
-        Sou1.svg ... Sou9.svg
-        Ton.svg Nan.svg Shaa.svg Pei.svg
-        Haku.svg Hatsu.svg Chun.svg
+        Man1.png ... Man9.png
+        Pin1.png ... Pin9.png
+        Sou1.png ... Sou9.png
+        Ton.png Nan.png Shaa.png Pei.png
+        Haku.png Hatsu.png Chun.png
       LICENSE.md
       SOURCE.md
 ```
 
-`pubspec.yaml`には`assets/images/mahjong_tiles/`をアセットとして登録する。SVG表示には無料の`flutter_svg`パッケージを利用する。バージョンは実装時点でプロジェクトのFlutter/Dart SDKと互換性が確認できる安定版に固定し、アプリ実行時の通信は行わない。
+`pubspec.yaml`には`assets/images/mahjong_tiles/regular/`をアセットとして登録する。PNGはFlutter標準の`Image.asset`で表示し、追加の画像ライブラリやアプリ実行時の通信を必要としない。
 
 ### 4.3 牌とファイルの対応
 
 | `Tile` | ファイル | `Tile` | ファイル |
 | --- | --- | --- | --- |
-| `m1`～`m9` | `Man1.svg`～`Man9.svg` | `p1`～`p9` | `Pin1.svg`～`Pin9.svg` |
-| `s1`～`s9` | `Sou1.svg`～`Sou9.svg` | `east` | `Ton.svg` |
-| `south` | `Nan.svg` | `west` | `Shaa.svg` |
-| `north` | `Pei.svg` | `white` | `Haku.svg` |
-| `green` | `Hatsu.svg` | `red` | `Chun.svg` |
+| `m1`～`m9` | `Man1.png`～`Man9.png` | `p1`～`p9` | `Pin1.png`～`Pin9.png` |
+| `s1`～`s9` | `Sou1.png`～`Sou9.png` | `east` | `Ton.png` |
+| `south` | `Nan.png` | `west` | `Shaa.png` |
+| `north` | `Pei.png` | `white` | `Haku.png` |
+| `green` | `Hatsu.png` | `red` | `Chun.png` |
 
 対応は列挙値の文字列連結で推測せず、全34種を列挙した一つの定数マップで管理する。未対応の列挙値が追加された場合はテストで検出する。
 
@@ -91,7 +91,7 @@ presentation
   既存の入力・卓・分析Widget    操作、状態枠、バッジ、Semanticsを担当する
 ```
 
-ドメイン層はFlutterアセットやSVGライブラリへ依存させない。`tileLabel()`は削除せず、Semantics、ツールチップ、理由文、エラー時表示に継続利用する。
+ドメイン層はFlutterアセットや画像描画ライブラリへ依存させない。`tileLabel()`は削除せず、Semantics、ツールチップ、理由文、エラー時表示に継続利用する。
 
 ### 5.2 `MahjongTileFace`
 
@@ -104,7 +104,7 @@ presentation
 
 共通Widgetは牌面の描画だけを担当する。タップ、長押し、削除、危険分析の起動などの操作は持たせない。これにより同じ画像を操作可能な牌と参照専用の牌で再利用できる。
 
-SVGの読込に失敗した場合は、現在の牌らしい枠と`tileLabel(tile)`を表示し、画面全体を例外終了させない。デバッグ時に原因を追跡できる一方、ユーザーへファイルパスは表示しない。
+PNGの読込に失敗した場合は、現在の牌らしい枠と`tileLabel(tile)`を表示し、画面全体を例外終了させない。デバッグ時に原因を追跡できる一方、ユーザーへファイルパスは表示しない。
 
 ### 5.3 状態表示
 
@@ -153,16 +153,16 @@ SVGの読込に失敗した場合は、現在の牌らしい枠と`tileLabel(til
 ## 7. レスポンシブ・アクセシビリティ
 
 - `360 × 640`を最小確認サイズとし、文字倍率1.5でもRenderFlex overflowを発生させない
-- SVGは親から渡された有限サイズの範囲で描画し、画像の元サイズでレイアウトを決めない
+- PNGは親から渡された有限サイズの範囲で描画し、画像の元サイズでレイアウトを決めない
 - 小型の卓上牌でも操作領域は既存設計の44論理ピクセル目安を維持する
 - 操作可能な牌の外側に「1萬、残り3枚、タップして追加」などのSemanticsを設定する
-- 外側がSemanticsを持つ場合、SVG内部のSemanticsを除外して二重読み上げを防ぐ
+- 外側がSemanticsを持つ場合、画像内部のSemanticsを除外して二重読み上げを防ぐ
 - 色だけで選択、無効、危険度を伝えず、枠、数値、ラベルを併用する
 
 ## 8. エラー処理
 
 - アセット対応漏れは開発時のテストで検出する
-- SVGの解析・読込失敗時は文字牌へフォールバックする
+- PNGのデコード・読込失敗時は文字牌へフォールバックする
 - 1枚の画像エラーで他の牌や局面入力を操作不能にしない
 - ライセンス文書がない状態を完了としない
 - 素材取得元のファイルを無関係に一括同梱せず、使用対象だけを管理する
@@ -184,7 +184,7 @@ SVGの読込に失敗した場合は、現在の牌らしい枠と`tileLabel(til
 - 河、ドラ、副露の訂正操作と既存Keyを維持する
 - カン後のドラ表示牌選択を画像化しても進行が維持される
 - 相手分析の候補選択と理由表示を維持する
-- SVG読込失敗時に文字牌へフォールバックする
+- PNG読込失敗時に文字牌へフォールバックする
 - 360 × 640、文字倍率1.5で開始前・開始後にoverflowがない
 
 既存テストで牌名の`Text`を直接探索している箇所は、表示文字への依存をやめ、既存Key、Semantics、操作結果で検証する。理由文など本来テキストである表示の検証は維持する。
@@ -201,7 +201,7 @@ SVGの読込に失敗した場合は、現在の牌らしい枠と`tileLabel(til
 
 1. 素材の取得コミットとライセンスを確認する
 2. 使用する34ファイル、`LICENSE.md`、`SOURCE.md`を配置する
-3. `pubspec.yaml`へアセットとSVG依存を追加する
+3. `pubspec.yaml`へPNGアセットを追加する
 4. `TileAssetPath`と`MahjongTileFace`を実装する
 5. 牌パレットと固定手牌を共通画像へ置き換える
 6. 河、ドラ、副露を置き換える

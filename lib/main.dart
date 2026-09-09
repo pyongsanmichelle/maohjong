@@ -12,6 +12,7 @@ import 'presentation/danger_analysis_page.dart';
 import 'presentation/discard_metadata_editor.dart';
 import 'presentation/hand_danger_presentation.dart';
 import 'presentation/kan_dialog.dart';
+import 'presentation/mahjong_tile_face.dart';
 import 'presentation/match_action_bar.dart';
 import 'presentation/round_end_dialog.dart';
 import 'presentation/started_table_layout.dart';
@@ -938,12 +939,10 @@ class _MeldArea extends StatelessWidget {
                         ...meld.tiles.map(
                           (tile) => Padding(
                             padding: const EdgeInsets.only(left: 2),
-                            child: Text(
-                              tileLabel(tile),
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: tileColor(tile),
-                              ),
+                            child: MahjongTileFace(
+                              tile: tile,
+                              width: compact ? 18 : 24,
+                              height: compact ? 24 : 32,
                             ),
                           ),
                         ),
@@ -1019,7 +1018,13 @@ class _CallDialogState extends State<_CallDialog> {
     final sequences = widget.flow.chiSequences(widget.discard.tile);
     final chiEnabled = sequences.isNotEmpty;
     return AlertDialog(
-      title: Text('${tileLabel(widget.discard.tile)}を鳴く'),
+      title: Row(
+        children: [
+          MahjongTileFace(tile: widget.discard.tile, width: 28, height: 38),
+          const SizedBox(width: 8),
+          Text('${tileLabel(widget.discard.tile)}を鳴く'),
+        ],
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1062,13 +1067,31 @@ class _CallDialogState extends State<_CallDialog> {
                 spacing: 6,
                 children: sequences
                     .map(
-                      (sequence) => ChoiceChip(
-                        key: Key(
-                          'chi-${sequence.map((tile) => tile.name).join('-')}',
+                      (sequence) => Semantics(
+                        label: sequence.map(tileLabel).join('、'),
+                        child: ChoiceChip(
+                          key: Key(
+                            'chi-${sequence.map((tile) => tile.name).join('-')}',
+                          ),
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: sequence
+                                .map(
+                                  (tile) => Padding(
+                                    padding: const EdgeInsets.only(right: 2),
+                                    child: MahjongTileFace(
+                                      tile: tile,
+                                      width: 22,
+                                      height: 30,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          selected: _sameTiles(_sequence, sequence),
+                          onSelected: (_) =>
+                              setState(() => _sequence = sequence),
                         ),
-                        label: Text(sequence.map(tileLabel).join(' ')),
-                        selected: _sameTiles(_sequence, sequence),
-                        onSelected: (_) => setState(() => _sequence = sequence),
                       ),
                     )
                     .toList(),
@@ -1357,6 +1380,7 @@ class _TileButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: isEnabled,
+      excludeSemantics: true,
       label: isPaletteTile
           ? '${tileLabel(tile)}、残り$remainingCopies枚'
           : dangerScore == null
@@ -1377,49 +1401,62 @@ class _TileButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(5),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            padding: const EdgeInsets.all(1),
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Expanded(
-                  flex: 2,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      tileLabel(tile),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: fitWidth != null && fitWidth! < 30
-                            ? 11
-                            : null,
-                        color: isEnabled
-                            ? tileColor(tile)
-                            : Colors.grey.shade600,
-                      ),
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: isEnabled ? 1 : 0.42,
+                    child: MahjongTileFace(
+                      tile: tile,
+                      width: fitWidth ?? (isPaletteTile ? paletteWidth : 38),
+                      height: fitHeight ?? (isPaletteTile ? 56 : 52),
                     ),
                   ),
                 ),
                 if (isPaletteTile)
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '残$remainingCopies',
-                        maxLines: 1,
-                        style: Theme.of(context).textTheme.labelSmall,
+                  Positioned(
+                    right: 1,
+                    bottom: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Text(
+                          '残$remainingCopies',
+                          maxLines: 1,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: Colors.white, fontSize: 9),
+                        ),
                       ),
                     ),
                   ),
                 if (dangerScore != null)
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '$dangerScore%',
-                        key: dangerScoreKey,
-                        maxLines: 1,
-                        style: Theme.of(context).textTheme.labelSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                  Positioned(
+                    right: 1,
+                    top: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Text(
+                          '$dangerScore%',
+                          key: dangerScoreKey,
+                          maxLines: 1,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
                       ),
                     ),
                   ),
