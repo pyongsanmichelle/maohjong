@@ -287,6 +287,8 @@ Widgetへ同じ初期値を重複定義しない。
 
 開始後だけ取り消し、鳴き、カン、局終了、相手分析、設定に戻るを表示し、局面補正と追加ドラへも到達できるようにする。
 
+開始後の操作優先順位、固定高さ、その他メニュー、アクセシビリティの詳細は[対局中コンパクトアクションバー 基本設計書](compact_match_action_bar_design.md)を正とする。
+
 ### 10.7 DoraIndicatorPicker
 
 開始後のドラ追加専用モーダル。河入力や手番と独立し、結果を`SituationEditor.add(InputTarget.doraIndicators, tile)`へ渡す。
