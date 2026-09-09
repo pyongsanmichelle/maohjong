@@ -10,6 +10,7 @@ import '../domain/round_result.dart';
 import '../domain/tile.dart';
 import 'danger_reason_formatter.dart';
 import 'hand_danger_presentation.dart';
+import 'mahjong_tile_face.dart';
 import 'opponent_intent_view.dart';
 import 'tile_presentation.dart';
 
@@ -324,15 +325,7 @@ class _AssessmentGrid extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  FittedBox(
-                    child: Text(
-                      tileLabel(assessment.tile),
-                      style: TextStyle(
-                        color: tileColor(assessment.tile),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  MahjongTileFace(tile: assessment.tile, width: 24, height: 32),
                   FittedBox(
                     child: Text(
                       dangerLevelLabel(assessment.level),

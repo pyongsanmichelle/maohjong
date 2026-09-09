@@ -5,6 +5,7 @@ import '../domain/meld.dart';
 import '../domain/round_progress.dart';
 import '../domain/round_result.dart';
 import '../domain/tile.dart';
+import 'mahjong_tile_face.dart';
 import 'tile_presentation.dart';
 
 /// 対局開始後の局情報と卓上の牌を、実際の席順に近い位置へ配置します。
@@ -444,13 +445,10 @@ class _CompactMeldStrip extends StatelessWidget {
                   ...meld.tiles.map(
                     (tile) => Padding(
                       padding: const EdgeInsets.only(left: 1),
-                      child: Text(
-                        tileLabel(tile),
-                        style: TextStyle(
-                          color: tileColor(tile),
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: MahjongTileFace(
+                        tile: tile,
+                        width: metrics.width * 0.72,
+                        height: metrics.height,
                       ),
                     ),
                   ),
@@ -507,17 +505,7 @@ class _TableTile extends StatelessWidget {
           border: Border.all(color: const Color(0xff5b5b5b), width: 0.7),
           borderRadius: BorderRadius.circular(3),
         ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            tileLabel(tile),
-            style: TextStyle(
-              color: tileColor(tile),
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
+        child: MahjongTileFace(tile: tile, width: width, height: height),
       ),
     ),
   );
@@ -548,7 +536,11 @@ class _TableTileMetrics {
     final paletteWidth =
         (availableWidth - pageHorizontalPadding - paletteSpacing * 8) / 9;
     final width = (paletteWidth * 0.5).clamp(14.0, 24.0).toDouble();
-    return _TableTileMetrics(width: width, height: width * 1.28, spacing: 1);
+    return _TableTileMetrics(
+      width: width,
+      height: width * mahjongTileHeightToWidthRatio,
+      spacing: 1,
+    );
   }
 }
 
