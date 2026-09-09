@@ -78,6 +78,7 @@ void main() {
             onAddDora: () => selected = 'dora',
             onOpenAnalysis: () => selected = 'analysis',
             onReturnToSetup: () => selected = 'setup',
+            onImportImage: () => selected = 'image',
           ),
         ),
       ),
@@ -86,6 +87,7 @@ void main() {
     for (final entry in {
       'kanCorrectionButton': 'correction',
       'addDoraButton': 'dora',
+      'staticImageInputMenuButton': 'image',
       'dangerAnalysisButton': 'analysis',
       'returnToSetupButton': 'setup',
     }.entries) {

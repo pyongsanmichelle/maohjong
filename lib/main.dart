@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import 'application/image_source_gateway.dart';
+import 'application/recognition_draft_use_cases.dart';
 import 'domain/game_situation.dart';
 import 'domain/match_input_flow.dart';
 import 'domain/match_setup_validation.dart';
@@ -8,6 +12,9 @@ import 'domain/round_progress.dart';
 import 'domain/round_action_history.dart';
 import 'domain/situation_editor.dart';
 import 'domain/tile.dart';
+import 'domain/tile_recognition.dart';
+import 'infrastructure/image_picker_source_gateway.dart';
+import 'infrastructure/onnx_mahjong_tile_recognizer.dart';
 import 'presentation/danger_analysis_page.dart';
 import 'presentation/discard_metadata_editor.dart';
 import 'presentation/hand_danger_presentation.dart';
@@ -16,6 +23,7 @@ import 'presentation/mahjong_tile_face.dart';
 import 'presentation/match_action_bar.dart';
 import 'presentation/round_end_dialog.dart';
 import 'presentation/started_table_layout.dart';
+import 'presentation/static_image_recognition_page.dart';
 import 'presentation/tile_presentation.dart';
 
 void main() => runApp(const MaohjongApp());
@@ -23,7 +31,13 @@ void main() => runApp(const MaohjongApp());
 /// 局面入力を提供するアプリケーションのルートです。
 class MaohjongApp extends StatelessWidget {
   /// ルートウィジェットを生成します。
-  const MaohjongApp({super.key});
+  const MaohjongApp({super.key, this.imageSourceGateway, this.tileRecognizer});
+
+  /// テストや別プラットフォームで差し替える画像取得処理です。
+  final ImageSourceGateway? imageSourceGateway;
+
+  /// テストや将来のモデル更新で差し替える牌認識処理です。
+  final MahjongTileRecognizer? tileRecognizer;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -33,14 +47,27 @@ class MaohjongApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff0f5f4f)),
       useMaterial3: true,
     ),
-    home: const SituationInputPage(),
+    home: SituationInputPage(
+      imageSourceGateway: imageSourceGateway,
+      tileRecognizer: tileRecognizer,
+    ),
   );
 }
 
 /// 牌パレットで手牌と各家の河を編集する画面です。
 class SituationInputPage extends StatefulWidget {
   /// 局面入力画面を生成します。
-  const SituationInputPage({super.key});
+  const SituationInputPage({
+    super.key,
+    this.imageSourceGateway,
+    this.tileRecognizer,
+  });
+
+  /// カメラ・画像選択の差し替え可能な窓口です。
+  final ImageSourceGateway? imageSourceGateway;
+
+  /// 静止画認識の差し替え可能な窓口です。
+  final MahjongTileRecognizer? tileRecognizer;
 
   @override
   State<SituationInputPage> createState() => _SituationInputPageState();
@@ -51,6 +78,9 @@ class _SituationInputPageState extends State<SituationInputPage> {
   InputTarget _target = InputTarget.hand;
   late final SituationEditor _editor;
   late final MatchInputFlow _flow;
+  late final ImageSourceGateway _imageSourceGateway;
+  late final MahjongTileRecognizer _tileRecognizer;
+  late final bool _ownsTileRecognizer;
   final HandDangerPresenter _handDangerPresenter = const HandDangerPresenter();
 
   /// 現在画面に表示して牌を追加する入力先です。
@@ -71,6 +101,123 @@ class _SituationInputPageState extends State<SituationInputPage> {
     final situation = GameSituation();
     _editor = SituationEditor(situation);
     _flow = MatchInputFlow(situation);
+    _imageSourceGateway =
+        widget.imageSourceGateway ?? ImagePickerSourceGateway();
+    _ownsTileRecognizer = widget.tileRecognizer == null;
+    _tileRecognizer = widget.tileRecognizer ?? OnnxMahjongTileRecognizer();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreLostImage());
+  }
+
+  @override
+  void dispose() {
+    if (_ownsTileRecognizer) _tileRecognizer.dispose();
+    super.dispose();
+  }
+
+  /// Androidで画像選択中に破棄されたActivityの結果を復元します。
+  Future<void> _restoreLostImage() async {
+    final result = await _imageSourceGateway.retrieveLostImage();
+    if (!mounted || result == null) return;
+    if (result.isSuccess) {
+      await _reviewRecognition(result.path!);
+    } else if (result.failure != ImageAcquisitionFailure.cancelled) {
+      _showImageAcquisitionFailure(result.failure!);
+    }
+  }
+
+  /// カメラまたは端末内画像を選ぶシートを表示します。
+  Future<void> _showStaticImageInput() async {
+    final source = await showModalBottomSheet<StillImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('静止画から局面を入力'),
+              subtitle: Text('認識結果は確認・訂正してから反映されます。'),
+            ),
+            ListTile(
+              key: const Key('recognitionCameraSource'),
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('カメラで撮影'),
+              onTap: () => Navigator.pop(context, StillImageSource.camera),
+            ),
+            ListTile(
+              key: const Key('recognitionGallerySource'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('端末の画像を選択'),
+              onTap: () => Navigator.pop(context, StillImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || source == null) return;
+    final result = await _imageSourceGateway.acquire(source);
+    if (!mounted) return;
+    if (!result.isSuccess) {
+      if (result.failure != ImageAcquisitionFailure.cancelled) {
+        _showImageAcquisitionFailure(result.failure!);
+      }
+      return;
+    }
+    await _reviewRecognition(
+      result.path!,
+      deleteAfterReview: source == StillImageSource.camera,
+    );
+  }
+
+  /// 認識候補の確認画面を開き、確定時だけ現在局へ一括反映します。
+  Future<void> _reviewRecognition(
+    String imagePath, {
+    bool deleteAfterReview = false,
+  }) async {
+    RecognitionDraft? draft;
+    try {
+      draft = await Navigator.of(context).push<RecognitionDraft>(
+        MaterialPageRoute(
+          builder: (context) => StaticImageRecognitionPage(
+            imagePath: imagePath,
+            recognizer: _tileRecognizer,
+          ),
+        ),
+      );
+    } finally {
+      if (deleteAfterReview) await _deleteTemporaryImage(imagePath);
+    }
+    if (!mounted || draft == null) return;
+    final applied = const ApplyRecognitionDraftUseCase().call(
+      draft: draft,
+      target: _editor.situation,
+      handLimit: _currentHandLimit,
+    );
+    if (!applied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('局面へ反映できませんでした。候補をもう一度確認してください。')),
+      );
+      return;
+    }
+    setState(() {
+      _editor.clearHistory();
+      _target = InputTarget.hand;
+      if (_flow.started) _flow.reseedFromSituation();
+    });
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('確認済みの認識結果を局面へ反映しました。')));
+  }
+
+  /// 画像取得失敗の理由を個人情報を含まない案内へ変換して表示します。
+  void _showImageAcquisitionFailure(ImageAcquisitionFailure failure) {
+    final message = switch (failure) {
+      ImageAcquisitionFailure.cancelled => '画像の選択を中止しました。',
+      ImageAcquisitionFailure.permissionDenied =>
+        'カメラまたは写真へのアクセスが許可されていません。端末設定を確認してください。',
+      ImageAcquisitionFailure.unavailable => 'この端末では画像取得を利用できません。',
+      ImageAcquisitionFailure.unknown => '画像を取得できませんでした。もう一度お試しください。',
+    };
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 選択中の編集先へ牌を追加し、上限時には理由を表示します。
@@ -148,6 +295,16 @@ class _SituationInputPageState extends State<SituationInputPage> {
       source: selection.source,
       declaresRiichi: selection.declaresRiichi,
     );
+  }
+
+  /// カメラ撮影で作られた一時画像だけを確認終了後に破棄します。
+  Future<void> _deleteTemporaryImage(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // 一時ファイルの削除失敗は局面反映を妨げない。
+    }
   }
 
   /// 指定領域の指定位置にある牌を削除します。
@@ -610,6 +767,7 @@ class _SituationInputPageState extends State<SituationInputPage> {
               onAddDora: _showDoraIndicatorPicker,
               onOpenAnalysis: _openDangerAnalysis,
               onReturnToSetup: _returnToSetup,
+              onImportImage: _showStaticImageInput,
             ),
             const SizedBox(height: 4),
             Expanded(
@@ -689,6 +847,12 @@ class _SituationInputPageState extends State<SituationInputPage> {
         onPressed: _flow.canStart ? _start : null,
         icon: const Icon(Icons.play_arrow),
         label: const Text('開始'),
+      ),
+      OutlinedButton.icon(
+        key: const Key('staticImageInputButton'),
+        onPressed: _showStaticImageInput,
+        icon: const Icon(Icons.add_a_photo_outlined),
+        label: const Text('画像から入力'),
       ),
       Text(
         '手牌 ${_editor.situation.hand.length}/${_flow.handLimit}枚',
