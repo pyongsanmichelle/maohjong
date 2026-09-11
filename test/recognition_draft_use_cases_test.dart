@@ -61,6 +61,130 @@ void main() {
     expect(draft.canApply, isTrue);
   });
 
+  test('画像の最下段へ達する牌は中心が河の範囲でも自分の手牌にする', () {
+    final draft = builder(
+      imagePath: 'table.jpg',
+      result: const TileRecognitionResult(
+        imageWidth: 1000,
+        imageHeight: 800,
+        modelVersion: 'test-model',
+        tiles: [
+          RecognizedTile(
+            id: 'front-hand',
+            tile: Tile.m1,
+            boundingBox: NormalizedRect(
+              left: 0.4,
+              top: 0.67,
+              width: 0.08,
+              height: 0.14,
+            ),
+            confidence: 0.9,
+            region: RecognitionRegion.unknown,
+          ),
+          RecognizedTile(
+            id: 'own-river',
+            tile: Tile.p2,
+            boundingBox: NormalizedRect(
+              left: 0.4,
+              top: 0.61,
+              width: 0.08,
+              height: 0.10,
+            ),
+            confidence: 0.9,
+            region: RecognitionRegion.unknown,
+          ),
+        ],
+      ),
+    );
+
+    expect(_regionOf(draft, 'front-hand'), RecognitionRegion.ownHand);
+    expect(_regionOf(draft, 'own-river'), RecognitionRegion.ownRiver);
+  });
+
+  test('撮影角度で下端が固定境界に届かなくても最下段の横並びを手牌にする', () {
+    final detected = <RecognizedTile>[
+      for (var index = 0; index < 3; index++)
+        RecognizedTile(
+          id: 'hand-$index',
+          tile: Tile.values[index],
+          boundingBox: NormalizedRect(
+            left: 0.25 + index * 0.10,
+            top: 0.62,
+            width: 0.08,
+            height: 0.13,
+          ),
+          confidence: 0.9,
+          region: RecognitionRegion.unknown,
+        ),
+      const RecognizedTile(
+        id: 'river',
+        tile: Tile.p1,
+        boundingBox: NormalizedRect(
+          left: 0.46,
+          top: 0.58,
+          width: 0.07,
+          height: 0.08,
+        ),
+        confidence: 0.9,
+        region: RecognitionRegion.unknown,
+      ),
+    ];
+    final draft = builder(
+      imagePath: 'table.jpg',
+      result: TileRecognitionResult(
+        imageWidth: 1000,
+        imageHeight: 800,
+        modelVersion: 'test-model',
+        tiles: detected,
+      ),
+    );
+
+    for (var index = 0; index < 3; index++) {
+      expect(_regionOf(draft, 'hand-$index'), RecognitionRegion.ownHand);
+    }
+    expect(_regionOf(draft, 'river'), RecognitionRegion.ownRiver);
+  });
+
+  test('中央付近でも通常サイズの対面牌をドラ表示牌にしない', () {
+    final draft = builder(
+      imagePath: 'table.jpg',
+      result: const TileRecognitionResult(
+        imageWidth: 1000,
+        imageHeight: 800,
+        modelVersion: 'test-model',
+        tiles: [
+          RecognizedTile(
+            id: 'across-discard',
+            tile: Tile.m1,
+            boundingBox: NormalizedRect(
+              left: 0.46,
+              top: 0.39,
+              width: 0.08,
+              height: 0.12,
+            ),
+            confidence: 0.9,
+            region: RecognitionRegion.unknown,
+          ),
+          RecognizedTile(
+            id: 'dora',
+            tile: Tile.p2,
+            boundingBox: NormalizedRect(
+              left: 0.47,
+              top: 0.47,
+              width: 0.05,
+              height: 0.05,
+            ),
+            confidence: 0.9,
+            region: RecognitionRegion.unknown,
+          ),
+        ],
+      ),
+    );
+
+    expect(_regionOf(draft, 'across-discard'), RecognitionRegion.acrossRiver);
+    expect(_regionOf(draft, 'dora'), RecognitionRegion.doraIndicators);
+  });
+
   test('低信頼度は警告するが未確定牌と配置不明だけが反映を妨げる', () {
     final lowConfidence = builder.rebuild(
       imagePath: 'table.jpg',

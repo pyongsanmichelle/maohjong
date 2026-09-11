@@ -89,6 +89,45 @@ void main() {
     expect(apply.onPressed, isNull);
   });
 
+  testWidgets('認識が時間内に終わらない場合は再試行または手入力へ戻れる', (tester) async {
+    final recognizer = _NeverCompletingRecognizer();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StaticImageRecognitionPage(
+          imagePath: imageFile.path,
+          recognizer: recognizer,
+          recognitionTimeout: const Duration(milliseconds: 50),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('recognitionProgress')), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    expect(find.byKey(const Key('recognitionProgress')), findsNothing);
+    expect(find.byKey(const Key('recognitionError')), findsOneWidget);
+    expect(find.textContaining('時間がかかりすぎました'), findsOneWidget);
+    expect(find.byKey(const Key('recognitionRetryButton')), findsOneWidget);
+    expect(recognizer.cancelCount, 2);
+  });
+
+  testWidgets('認識中に画面を閉じると実行中の認識を中断する', (tester) async {
+    final recognizer = _NeverCompletingRecognizer();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StaticImageRecognitionPage(
+          imagePath: imageFile.path,
+          recognizer: recognizer,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+    expect(recognizer.cancelCount, 2);
+  });
+
   testWidgets('準備画面で画像を選び確認した候補だけを局面へ反映する', (tester) async {
     final recognizer = _FakeRecognizer([
       _candidate('hand', Tile.m1, RecognitionRegion.ownHand),
@@ -178,6 +217,36 @@ class _ControllableRecognizer implements MahjongTileRecognizer {
   @override
   Future<TileRecognitionResult> recognize(String imagePath) =>
       _completer.future;
+
+  @override
+  void dispose() {}
+}
+
+/// 完了しない推論と中断通知を再現するテスト用認識器です。
+class _NeverCompletingRecognizer
+    implements MahjongTileRecognizer, CancellableMahjongTileRecognizer {
+  /// 中断を要求された回数です。
+  var cancelCount = 0;
+
+  /// 現在待機中の認識結果です。
+  Completer<TileRecognitionResult>? _active;
+
+  @override
+  void cancelActiveRecognition() {
+    cancelCount++;
+    final active = _active;
+    _active = null;
+    if (active != null && !active.isCompleted) {
+      active.completeError(const RecognitionInferenceCancelled());
+    }
+  }
+
+  @override
+  Future<TileRecognitionResult> recognize(String imagePath) {
+    final active = Completer<TileRecognitionResult>();
+    _active = active;
+    return active.future;
+  }
 
   @override
   void dispose() {}

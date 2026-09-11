@@ -36,6 +36,36 @@ abstract interface class MahjongTileRecognizer {
   void dispose();
 }
 
+/// 実行中の認識を明示的に中断できる認識器の追加契約です。
+///
+/// 画面を閉じた場合や再試行する場合に、端末内推論をバックグラウンドへ
+/// 残さないために利用します。
+abstract interface class CancellableMahjongTileRecognizer {
+  /// 現在実行中の認識があれば中断します。
+  void cancelActiveRecognition();
+}
+
+/// 端末内認識が指定段階で失敗したことを表します。
+class RecognitionInferenceException implements Exception {
+  /// 失敗した処理段階を受け取ります。
+  const RecognitionInferenceException(this.stage);
+
+  /// 画像やパスを含まない処理段階です。
+  final String stage;
+}
+
+/// 端末内認識が制限時間を超えたことを表します。
+class RecognitionInferenceTimeout extends RecognitionInferenceException {
+  /// 時間切れになった処理段階を受け取ります。
+  const RecognitionInferenceTimeout(super.stage);
+}
+
+/// 利用者操作または画面破棄による中断を表します。
+class RecognitionInferenceCancelled extends RecognitionInferenceException {
+  /// 中断結果を生成します。
+  const RecognitionInferenceCancelled() : super('cancelled');
+}
+
 /// 検出結果を領域別の確認用下書きへ変換します。
 class BuildRecognitionDraftUseCase {
   /// 位置に基づく配置と警告判定を行うUseCaseを生成します。
@@ -49,12 +79,18 @@ class BuildRecognitionDraftUseCase {
     required String imagePath,
     required TileRecognitionResult result,
   }) {
+    final bottomHandIds = _bottomHandCandidateIds(result.tiles);
     final assigned =
         result.tiles
             .map(
               (candidate) => candidate.region == RecognitionRegion.unknown
                   ? candidate.copyWith(
-                      region: _regionFor(candidate.boundingBox),
+                      region: _regionFor(
+                        candidate.boundingBox,
+                        isBottomHandCandidate: bottomHandIds.contains(
+                          candidate.id,
+                        ),
+                      ),
                     )
                   : candidate,
             )
@@ -140,17 +176,25 @@ class BuildRecognitionDraftUseCase {
   }
 
   /// 卓上の概略位置から最初の配置候補を返します。
-  RecognitionRegion _regionFor(NormalizedRect box) {
+  RecognitionRegion _regionFor(
+    NormalizedRect box, {
+    bool isBottomHandCandidate = false,
+  }) {
     final x = box.centerX;
     final y = box.centerY;
-    if (x >= 0.43 && x <= 0.57 && y >= 0.43 && y <= 0.57) {
+    final bottom = box.top + box.height;
+    final isCentral = x >= 0.43 && x <= 0.57;
+    final isSmallIndicator = box.width <= 0.07 && box.height <= 0.10;
+    if (isCentral && y >= 0.43 && y <= 0.57 && isSmallIndicator) {
       return RecognitionRegion.doraIndicators;
     }
-    if (y >= 0.78) return RecognitionRegion.ownHand;
+    if (isBottomHandCandidate || bottom >= 0.78) {
+      return RecognitionRegion.ownHand;
+    }
     if (y >= 0.60 && x >= 0.25 && x <= 0.75) {
       return RecognitionRegion.ownRiver;
     }
-    if (y <= 0.36 && x >= 0.24 && x <= 0.76) {
+    if (y <= 0.55 && x >= 0.24 && x <= 0.76) {
       return RecognitionRegion.acrossRiver;
     }
     if (x < 0.36 && y >= 0.22 && y <= 0.78) {
@@ -162,6 +206,36 @@ class BuildRecognitionDraftUseCase {
     return RecognitionRegion.unknown;
   }
 
+  /// 撮影角度に応じた最下段の横並びを、自分の手牌候補として返します。
+  Set<String> _bottomHandCandidateIds(List<RecognizedTile> tiles) {
+    final eligible = tiles
+        .where(
+          (candidate) =>
+              candidate.region == RecognitionRegion.unknown &&
+              candidate.boundingBox.centerX >= 0.05 &&
+              candidate.boundingBox.centerX <= 0.95 &&
+              candidate.boundingBox.centerY >= 0.58 &&
+              candidate.boundingBox.height >= 0.09,
+        )
+        .toList();
+    if (eligible.length < 3) return const {};
+    final maxBottom = eligible
+        .map(
+          (candidate) =>
+              candidate.boundingBox.top + candidate.boundingBox.height,
+        )
+        .reduce(_maxDouble);
+    final bottomRow = eligible
+        .where(
+          (candidate) =>
+              candidate.boundingBox.top + candidate.boundingBox.height >=
+              maxBottom - 0.08,
+        )
+        .toList();
+    if (bottomRow.length < 3) return const {};
+    return {for (final candidate in bottomRow) candidate.id};
+  }
+
   /// 画面上で上から左へ読める安定した候補順を返します。
   int _readingOrder(RecognizedTile first, RecognizedTile second) {
     final region = first.region.index.compareTo(second.region.index);
@@ -171,6 +245,10 @@ class BuildRecognitionDraftUseCase {
     return first.boundingBox.centerX.compareTo(second.boundingBox.centerX);
   }
 }
+
+/// `dart:math`へ依存せず、二つの実数の大きい方を返します。
+double _maxDouble(double first, double second) =>
+    first > second ? first : second;
 
 /// 確認済みの認識下書きを既存局面へ一括反映します。
 class ApplyRecognitionDraftUseCase {

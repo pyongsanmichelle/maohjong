@@ -9,11 +9,12 @@
 - Repository license: MIT
 - Model family: YOLO11 nano
 - Input: RGB float tensor `[1, 3, 640, 640]`
-- Output: non-NMS detection tensor `[1, 42, 8400]`
+- Output: non-NMS detection tensor `[1, 41, 8400]`
 
-The repository describes the model as trained for 38 tile-related classes,
-including red fives and an unknown class. Maohjong maps red fives to the
-corresponding ordinary five and keeps `UNKNOWN` as an unresolved candidate.
+The bundled ONNX metadata declares 37 tile-related classes: the 34 standard
+tiles and three red fives (`0m`, `0p`, and `0s`). Although the repository
+README also describes an `UNKNOWN` class, it is not present in this exact model
+file. Maohjong maps red fives to the corresponding ordinary five.
 
 The source repository links its training photographs separately. Before a
 public app release, re-check the training-data terms and retain any attribution
