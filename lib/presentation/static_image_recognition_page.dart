@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ class StaticImageRecognitionPage extends StatefulWidget {
     required this.imagePath,
     required this.recognizer,
     this.draftBuilder = const BuildRecognitionDraftUseCase(),
+    this.recognitionTimeout = const Duration(seconds: 30),
   });
 
   /// 端末内にある認識対象画像の一時パスです。
@@ -26,6 +28,12 @@ class StaticImageRecognitionPage extends StatefulWidget {
 
   /// 認識結果を局面候補へ割り当てるUseCaseです。
   final BuildRecognitionDraftUseCase draftBuilder;
+
+  /// UIが認識結果を待つ最大時間です。
+  ///
+  /// ネイティブ推論が応答しない場合も、利用者が再試行または手入力へ
+  /// 戻れる状態へ必ず遷移させます。
+  final Duration recognitionTimeout;
 
   @override
   State<StaticImageRecognitionPage> createState() =>
@@ -50,13 +58,16 @@ class _StaticImageRecognitionPageState
   /// 同じ画像を認識し、古い非同期結果を破棄します。
   Future<void> _recognize() async {
     final serial = ++_requestSerial;
+    _cancelActiveRecognition();
     setState(() {
       _recognizing = true;
       _errorMessage = null;
       _draft = null;
     });
     try {
-      final result = await widget.recognizer.recognize(widget.imagePath);
+      final result = await widget.recognizer
+          .recognize(widget.imagePath)
+          .timeout(widget.recognitionTimeout);
       if (!mounted || serial != _requestSerial) return;
       setState(() {
         _draft = widget.draftBuilder(
@@ -65,12 +76,35 @@ class _StaticImageRecognitionPageState
         );
         _recognizing = false;
       });
+    } on RecognitionInferenceTimeout {
+      _cancelActiveRecognition();
+      if (!mounted || serial != _requestSerial) return;
+      setState(() {
+        _recognizing = false;
+        _errorMessage = '画像認識に時間がかかりすぎました。もう一度試すか、手入力を利用してください。';
+      });
+    } on TimeoutException {
+      _cancelActiveRecognition();
+      if (!mounted || serial != _requestSerial) return;
+      setState(() {
+        _recognizing = false;
+        _errorMessage = '画像認識に時間がかかりすぎました。もう一度試すか、手入力を利用してください。';
+      });
     } catch (_) {
       if (!mounted || serial != _requestSerial) return;
       setState(() {
         _recognizing = false;
         _errorMessage = '画像を認識できませんでした。撮影条件を変えるか、手入力を利用してください。';
       });
+    }
+  }
+
+  /// 対応する認識器で実行中の端末内推論を停止します。
+  void _cancelActiveRecognition() {
+    final recognizer = widget.recognizer;
+    if (recognizer is CancellableMahjongTileRecognizer) {
+      (recognizer as CancellableMahjongTileRecognizer)
+          .cancelActiveRecognition();
     }
   }
 
@@ -174,6 +208,7 @@ class _StaticImageRecognitionPageState
   @override
   void dispose() {
     _requestSerial++;
+    _cancelActiveRecognition();
     super.dispose();
   }
 
